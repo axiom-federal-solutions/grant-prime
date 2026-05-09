@@ -1,0 +1,23 @@
+{
+  "name": "grant-prime",
+  "version": "1.0.0",
+  "description": "Automated grant discovery, scoring, and tracking for Noble Erne, LLC",
+  "main": "index.js",
+  "scripts": {
+    "discovery": "node agents/grant-discovery-agent.js",
+    "scoring": "node agents/grant-scoring-agent.js",
+    "alert": "node agents/grant-alert-agent.js",
+    "deadlines": "node agents/grant-deadline-monitor.js",
+    "proposal": "node agents/grant-proposal-agent.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.24.0",
+    "@supabase/supabase-js": "^2.43.0",
+    "@sendgrid/mail": "^8.1.3",
+    "node-fetch": "^3.3.2",
+    "dotenv": "^16.4.5"
+  }
+}
