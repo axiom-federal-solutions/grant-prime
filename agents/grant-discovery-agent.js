@@ -88,8 +88,8 @@ async function fetchGrantsGov() {
 
   for (const keyword of keywords) {
     try {
-      // Grants.gov search API — returns JSON
-      const url = `https://apply07.grants.gov/grantsws/rest/opportunities/search/`;
+      // Grants.gov search2 API — no API key required
+      const url = `https://api.grants.gov/v1/api/search2`;
       const body = JSON.stringify({
         keyword,
         oppStatuses: 'forecasted|posted', // active opportunities only
@@ -102,13 +102,12 @@ async function fetchGrantsGov() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Grants-Api-Key': process.env.GRANTS_GOV_API_KEY || '',
         },
         body,
       });
 
       const json = await res.json();
-      const opps = json.oppHits || [];
+      const opps = json.data?.oppHits || json.oppHits || [];
 
       for (const opp of opps) {
         results.push({
@@ -198,9 +197,9 @@ async function fetchDOLWorkforce() {
 
   try {
     // DOL uses Grants.gov backend — search specifically for DOL agency
-    const url = `https://apply07.grants.gov/grantsws/rest/opportunities/search/`;
+    const url = `https://api.grants.gov/v1/api/search2`;
     const body = JSON.stringify({
-      agencyCode: 'DOL',
+      agencies: 'DOL',
       oppStatuses: 'forecasted|posted',
       rows: 25,
       startRecordNum: 0,
@@ -213,7 +212,7 @@ async function fetchDOLWorkforce() {
     });
 
     const json = await res.json();
-    const opps = json.oppHits || [];
+    const opps = json.data?.oppHits || json.oppHits || [];
 
     for (const opp of opps) {
       results.push({
