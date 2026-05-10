@@ -2,24 +2,19 @@ name: Grant Discovery
 
 on:
   schedule:
-    - cron: '0 11 * * *'  # 6:00 AM CT (UTC-5) every day
-  workflow_dispatch:       # allows manual trigger from GitHub Actions UI
+    - cron: '0 11 * * *'   # 6:00 AM CT daily
+  workflow_dispatch:
 
 jobs:
   discover:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v3
-
-      - name: Set up Node.js 18
-        uses: actions/setup-node@v3
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
         with:
           node-version: '18'
           cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
+      - run: npm ci
 
       - name: Run discovery agent
         run: node agents/grant-discovery-agent.js
@@ -29,9 +24,24 @@ jobs:
           GRANTS_GOV_API_KEY: ${{ secrets.GRANTS_GOV_API_KEY }}
           SAM_GOV_API_KEY: ${{ secrets.SAM_GOV_API_KEY }}
 
-      - name: Run scoring agent immediately after discovery
+      - name: Run scoring agent
         run: node agents/grant-scoring-agent.js
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+
+      - name: Send failure alert email
+        if: failure()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.sendgrid.net
+          server_port: 587
+          username: apikey
+          password: ${{ secrets.SENDGRID_API_KEY }}
+          to: ${{ secrets.ALERT_EMAIL }}
+          from: ${{ secrets.SENDGRID_FROM_EMAIL }}
+          subject: "🚨 GRANT PRIME: Discovery Agent FAILED — ${{ github.run_id }}"
+          body: |
+            The Grant Discovery agent failed on ${{ github.run_id }}.
+            Check the logs: https://github.com/axiom-federal-solutions/grant-prime/actions/runs/${{ github.run_id }}

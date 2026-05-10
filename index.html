@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>GRANT PRIME v1 — Noble Erne, LLC</title>
+<title>GRANT PRIME v2 — Noble Erne, LLC</title>
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <style>
@@ -185,9 +185,11 @@ if(sessionStorage.getItem('gp_auth')==='1'){document.getElementById('pin-screen'
   <button class="sb-btn" onclick="go('deadlines',this)">⏰ Deadline Tracker</button>
   <button class="sb-btn" onclick="go('performance',this)">📈 Performance</button>
   <div class="sb-group">System</div>
+  <button class="sb-btn" onclick="go('funders',this)">🤝 Funder Contacts</button>
   <button class="sb-btn" onclick="go('agents',this)">⚙️ Agents & Config</button>
   <button class="sb-btn" onclick="go('help',this)">❓ Help & FAQ</button>
-  <div class="sb-foot">Noble Erne, LLC<br>treagent1@gmail.com<br>~$8–10/mo · 5 Agents · 4 Sources<br>Supabase: grant-prime-db<br><span id="last-load" style="color:var(--t3)">Loading…</span></div>
+  <div style="padding:10px 12px"><button onclick="exportCSV()" style="width:100%;padding:7px;border-radius:6px;border:1px solid var(--greenBd);background:var(--greenDim);color:var(--green);font-family:'Outfit',sans-serif;font-size:10px;font-weight:700;cursor:pointer;letter-spacing:.04em">⬇ Export CSV</button></div>
+  <div class="sb-foot">Noble Erne, LLC<br>treagent1@gmail.com<br>~$8–10/mo · 5 Agents · 5 Sources<br>Supabase: grant-prime-db<br><span id="last-load" style="color:var(--t3)">Loading…</span></div>
 </nav>
 
 <div class="main" id="mc">
@@ -201,6 +203,7 @@ if(sessionStorage.getItem('gp_auth')==='1'){document.getElementById('pin-screen'
   <div id="t-won"          class="tab" style="display:none"></div>
   <div id="t-deadlines"    class="tab" style="display:none"></div>
   <div id="t-performance"  class="tab" style="display:none"></div>
+  <div id="t-funders"      class="tab" style="display:none"></div>
   <div id="t-agents"       class="tab" style="display:none"></div>
   <div id="t-help"         class="tab" style="display:none"></div>
 </div>
@@ -240,7 +243,7 @@ function closeDetail(){document.getElementById('det-ov').classList.remove('open'
 function openDetail(html){document.getElementById('det-content').innerHTML=html;document.getElementById('det-ov').classList.add('open');document.getElementById('det-pan').classList.add('open');}
 
 function render(tab){
-  const fns={home:renderHome,action:renderAction,federal:()=>renderGrantList('federal'),edtech:()=>renderGrantList('edtech'),state:()=>renderGrantList('state'),foundation:()=>renderGrantList('foundation'),applications:renderApplications,won:renderWon,deadlines:renderDeadlines,performance:renderPerformance,agents:renderAgents,help:renderHelp};
+  const fns={home:renderHome,action:renderAction,federal:()=>renderGrantList('federal'),edtech:()=>renderGrantList('edtech'),state:()=>renderGrantList('state'),foundation:()=>renderGrantList('foundation'),applications:renderApplications,won:renderWon,deadlines:renderDeadlines,performance:renderPerformance,funders:renderFunders,agents:renderAgents,help:renderHelp};
   if(fns[tab])fns[tab]();
 }
 
@@ -391,27 +394,122 @@ function renderHelp(){
   el.innerHTML=`<div style="margin-bottom:18px"><div style="font-size:20px;font-weight:800">❓ Help & FAQ</div><div style="font-size:11px;color:var(--t3);margin-top:2px">GRANT PRIME quick reference</div></div>${faqs.map(f=>`<div class="card-section" style="cursor:pointer;margin-bottom:8px" onclick="const a=this.querySelector('.ans');a.style.display=a.style.display==='block'?'none':'block'"><div style="font-size:12px;font-weight:600;display:flex;justify-content:space-between;align-items:center">${f.q}<span style="color:var(--t3);font-size:16px">+</span></div><div class="ans" style="display:none;font-size:11px;color:var(--t2);line-height:1.7;margin-top:8px;padding-top:8px;border-top:1px solid var(--bd)">${f.a}</div></div>`).join('')}`;
 }
 
+// ── STATUS CHANGE ─────────────────────────────────────────────────────────
+async function changeStatus(grantId, newStatus){
+  const btn=document.getElementById('status-saving');
+  if(btn)btn.textContent='Saving…';
+  const {error}=await sb.from('grants').update({status:newStatus}).eq('id',grantId);
+  if(error){alert('Save failed: '+error.message);return;}
+  const g=GRANTS.find(gr=>gr.id===grantId);
+  if(g){g.status=newStatus;}
+  await loadData();
+  openGrantDetail(grantId);
+}
+
+// ── SAVE NOTES ────────────────────────────────────────────────────────────
+async function saveNotes(grantId){
+  const val=document.getElementById('notes-input-'+grantId)?.value||'';
+  const {error}=await sb.from('grants').update({notes:val}).eq('id',grantId);
+  if(error){alert('Save failed: '+error.message);return;}
+  const g=GRANTS.find(gr=>gr.id===grantId);
+  if(g)g.notes=val;
+  const btn=document.getElementById('notes-save-'+grantId);
+  if(btn){btn.textContent='Saved ✓';btn.style.color='var(--green)';setTimeout(()=>{btn.textContent='Save Notes';btn.style.color='';},2000);}
+}
+
+// ── SAVE ASSIGNMENT ───────────────────────────────────────────────────────
+async function saveAssignment(grantId){
+  const val=document.getElementById('assign-input-'+grantId)?.value||'';
+  const match=document.getElementById('match-input-'+grantId)?.value||null;
+  const contact=document.getElementById('contact-input-'+grantId)?.value||'';
+  const {error}=await sb.from('grants').update({
+    assigned_to:val||null,
+    match_required:match?Number(match):null,
+    funder_contact:contact||null,
+  }).eq('id',grantId);
+  if(error){alert('Save failed: '+error.message);return;}
+  const g=GRANTS.find(gr=>gr.id===grantId);
+  if(g){g.assigned_to=val;g.match_required=match;g.funder_contact=contact;}
+  const btn=document.getElementById('assign-save-'+grantId);
+  if(btn){btn.textContent='Saved ✓';btn.style.color='var(--green)';setTimeout(()=>{btn.textContent='Save';btn.style.color='';},2000);}
+}
+
 // ── GRANT DETAIL PANEL ────────────────────────────────────────────────────
 function openGrantDetail(grantId){
   const g=GRANTS.find(gr=>gr.grant_id===grantId||gr.id===grantId);
   if(!g)return;
   const d=daysLeft(g.deadline);
+  const statusFlow=['new','scored','applied','won','rejected','closed'];
+  const statusBtns=statusFlow.filter(s=>s!==g.status).map(s=>{
+    const colors={new:'var(--cyan)',scored:'var(--gold)',applied:'var(--green)',won:'var(--violet)',rejected:'var(--red)',closed:'var(--t3)'};
+    return `<button onclick="changeStatus('${g.id}','${s}')" style="padding:5px 10px;border-radius:5px;border:1px solid ${colors[s]}44;background:transparent;color:${colors[s]};font-family:'Outfit',sans-serif;font-size:9px;font-weight:700;cursor:pointer;text-transform:uppercase;letter-spacing:.08em">→ ${s}</button>`;
+  }).join('');
+
   openDetail(`
     <div style="margin-bottom:4px">
       <div style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px">${srcLabel(g.source)} Grant</div>
-      <div style="font-size:18px;font-weight:800;line-height:1.3;margin-bottom:8px">${g.title||'Untitled'}</div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">${statusPill(g.status||'new')}<span style="font-size:8px;font-weight:700;padding:1px 6px;border-radius:3px;background:rgba(255,255,255,.05);color:var(--t2)">${srcLabel(g.source).toUpperCase()}</span>${d!==null?`<span style="font-size:8px;font-weight:700;padding:1px 6px;border-radius:3px;background:${d<=7?'var(--redDim)':d<=14?'var(--amberDim)':'var(--greenDim)'};color:${d<=7?'var(--red)':d<=14?'var(--amber)':'var(--green)'}">${d} DAYS LEFT</span>`:''}</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">
-        <div style="background:var(--card);border-radius:6px;padding:10px"><div style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em;margin-bottom:4px">AI Score</div><div style="font-size:28px;font-weight:900;color:${sc(g.score||0)}">${g.score||'—'}</div></div>
-        <div style="background:var(--card);border-radius:6px;padding:10px"><div style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em;margin-bottom:4px">Award Amount</div><div style="font-size:16px;font-weight:800">${g.amount_min&&g.amount_max?fmt(g.amount_min)+' – '+fmt(g.amount_max):fmt(g.amount_max||g.amount_min)}</div></div>
+      <div style="font-size:17px;font-weight:800;line-height:1.3;margin-bottom:8px">${g.title||'Untitled'}</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+        ${statusPill(g.status||'new')}
+        <span style="font-size:8px;font-weight:700;padding:1px 6px;border-radius:3px;background:rgba(255,255,255,.05);color:var(--t2)">${srcLabel(g.source).toUpperCase()}</span>
+        ${d!==null?`<span style="font-size:8px;font-weight:700;padding:1px 6px;border-radius:3px;background:${d<=7?'var(--redDim)':d<=14?'var(--amberDim)':'var(--greenDim)'};color:${d<=7?'var(--red)':d<=14?'var(--amber)':'var(--green)'}">${d} DAYS LEFT</span>`:''}
+        ${g.priority&&g.priority!=='normal'?`<span style="font-size:8px;font-weight:700;padding:1px 6px;border-radius:3px;background:var(--redDim);color:var(--red)">${g.priority.toUpperCase()}</span>`:''}
       </div>
-      ${g.notes?`<div style="background:var(--card);border-radius:6px;padding:10px;margin-bottom:12px"><div style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em;margin-bottom:4px">AI Reasoning</div><div style="font-size:11px;color:var(--t2);line-height:1.6">${g.notes}</div></div>`:''}
+
+      <!-- Score + Amount -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
+        <div style="background:var(--card);border-radius:6px;padding:10px"><div style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em;margin-bottom:4px">AI Score</div><div style="font-size:28px;font-weight:900;color:${sc(g.score||0)}">${g.score||'—'}</div></div>
+        <div style="background:var(--card);border-radius:6px;padding:10px"><div style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em;margin-bottom:4px">Award Amount</div><div style="font-size:15px;font-weight:800">${g.amount_min&&g.amount_max?fmt(g.amount_min)+' – '+fmt(g.amount_max):fmt(g.amount_max||g.amount_min)}</div></div>
+      </div>
+
+      <!-- Status Change -->
+      <div style="background:var(--card);border-radius:6px;padding:10px;margin-bottom:10px">
+        <div style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px">Move Status</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px">${statusBtns}</div>
+        <span id="status-saving" style="font-size:9px;color:var(--t3)"></span>
+      </div>
+
+      ${g.notes?`<div style="background:var(--card);border-radius:6px;padding:10px;margin-bottom:10px"><div style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em;margin-bottom:4px">AI Reasoning</div><div style="font-size:11px;color:var(--t2);line-height:1.6">${g.notes}</div></div>`:''}
     </div>
-    <div class="det-section"><div class="det-sec-label">Details</div>${[['Funder',g.funder],['Deadline',fmtDate(g.deadline)],['Source',srcLabel(g.source)],['Apply',g.apply_url?`<a href="${g.apply_url}" target="_blank" style="color:var(--green)">Open Application →</a>`:'—']].map(([l,v])=>`<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--bd);font-size:11px"><span style="color:var(--t3)">${l}</span><span style="color:var(--t1);text-align:right;max-width:60%">${v||'—'}</span></div>`).join('')}</div>
-    ${g.description?`<div class="det-section"><div class="det-sec-label">Description</div><div style="font-size:11px;color:var(--t2);line-height:1.7">${g.description.slice(0,600)}${g.description.length>600?'…':''}</div></div>`:''}
+
+    <!-- Details -->
+    <div class="det-section">
+      <div class="det-sec-label">Details</div>
+      ${[['Funder',g.funder],['Deadline',fmtDate(g.deadline)],['Source',srcLabel(g.source)],['Apply URL',g.apply_url?`<a href="${g.apply_url}" target="_blank" style="color:var(--green)">Open →</a>`:'—']].map(([l,v])=>`<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--bd);font-size:11px"><span style="color:var(--t3)">${l}</span><span style="color:var(--t1);text-align:right;max-width:60%">${v||'—'}</span></div>`).join('')}
+    </div>
+
+    <!-- Team / Match / Contact -->
+    <div class="det-section">
+      <div class="det-sec-label">Team & Match Requirements</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+        <div><div style="font-size:9px;color:var(--t3);margin-bottom:4px">Assigned To</div><input id="assign-input-${g.id}" type="text" value="${g.assigned_to||''}" placeholder="Team member name" style="width:100%;background:var(--card);border:1px solid var(--bd);border-radius:5px;padding:6px 8px;color:var(--t1);font-family:'Outfit',sans-serif;font-size:11px"></div>
+        <div><div style="font-size:9px;color:var(--t3);margin-bottom:4px">Match Required (%)</div><input id="match-input-${g.id}" type="number" value="${g.match_required||''}" placeholder="e.g. 20" style="width:100%;background:var(--card);border:1px solid var(--bd);border-radius:5px;padding:6px 8px;color:var(--t1);font-family:'Outfit',sans-serif;font-size:11px"></div>
+      </div>
+      <div style="margin-bottom:8px"><div style="font-size:9px;color:var(--t3);margin-bottom:4px">Funder Contact</div><input id="contact-input-${g.id}" type="text" value="${g.funder_contact||''}" placeholder="Name · email · phone" style="width:100%;background:var(--card);border:1px solid var(--bd);border-radius:5px;padding:6px 8px;color:var(--t1);font-family:'Outfit',sans-serif;font-size:11px"></div>
+      <button id="assign-save-${g.id}" onclick="saveAssignment('${g.id}')" style="padding:5px 14px;border-radius:5px;border:1px solid var(--greenBd);background:var(--greenDim);color:var(--green);font-family:'Outfit',sans-serif;font-size:10px;font-weight:700;cursor:pointer">Save</button>
+    </div>
+
+    <!-- Notes Editor -->
+    <div class="det-section">
+      <div class="det-sec-label">Notes</div>
+      <textarea id="notes-input-${g.id}" rows="4" placeholder="Add your notes, next steps, contact history…" style="width:100%;background:var(--card);border:1px solid var(--bd);border-radius:6px;padding:10px;color:var(--t1);font-family:'Outfit',sans-serif;font-size:11px;line-height:1.6;resize:vertical">${g.notes||''}</textarea>
+      <button id="notes-save-${g.id}" onclick="saveNotes('${g.id}')" style="margin-top:6px;padding:5px 14px;border-radius:5px;border:1px solid var(--greenBd);background:var(--greenDim);color:var(--green);font-family:'Outfit',sans-serif;font-size:10px;font-weight:700;cursor:pointer">Save Notes</button>
+    </div>
+
+    ${g.description?`<div class="det-section"><div class="det-sec-label">Description</div><div style="font-size:11px;color:var(--t2);line-height:1.7">${g.description.slice(0,700)}${g.description.length>700?'…':''}</div></div>`:''}
     ${g.eligibility?`<div class="det-section"><div class="det-sec-label">Eligibility</div><div style="font-size:11px;color:var(--t2);line-height:1.7">${g.eligibility}</div></div>`:''}
-    ${g.proposal_draft?`<div class="det-section"><div class="det-sec-label">✍️ Proposal Draft</div><div style="font-size:11px;color:var(--t2);line-height:1.7;background:var(--card);padding:12px;border-radius:6px;white-space:pre-wrap">${g.proposal_draft.slice(0,800)}…</div></div>`:''}
-    <div class="det-section">${g.apply_url?`<a href="${g.apply_url}" target="_blank" class="apply-btn" style="display:block;text-align:center;text-decoration:none;margin-bottom:10px">🚀 Open Application →</a>`:''}<div style="font-size:9px;color:var(--t3);text-align:center">Propose: node agents/grant-proposal-agent.js ${g.id||g.grant_id}</div></div>`);
+    ${g.proposal_draft?`<div class="det-section"><div class="det-sec-label">✍️ Proposal Draft</div><div style="font-size:11px;color:var(--t2);line-height:1.7;background:var(--card);padding:12px;border-radius:6px;white-space:pre-wrap;max-height:200px;overflow-y:auto">${g.proposal_draft.slice(0,1000)}…</div></div>`:''}
+
+    <!-- Actions -->
+    <div class="det-section">
+      ${g.apply_url?`<a href="${g.apply_url}" target="_blank" class="apply-btn" style="display:block;text-align:center;text-decoration:none;margin-bottom:10px">🚀 Open Application Portal →</a>`:''}
+      <div style="background:var(--card);border-radius:6px;padding:12px;margin-top:8px">
+        <div style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px">✍️ Generate Proposal Draft</div>
+        <div style="font-size:10px;color:var(--t2);line-height:1.6;margin-bottom:8px">Run this command in your terminal to generate a full application narrative via Claude Sonnet:</div>
+        <div style="background:var(--bg);border-radius:4px;padding:8px 10px;font-family:monospace;font-size:10px;color:var(--green);user-select:all">node agents/grant-proposal-agent.js ${g.id}</div>
+        <div style="font-size:9px;color:var(--t3);margin-top:6px">Draft saves to Supabase and emails to treagent1@gmail.com</div>
+      </div>
+    </div>`);
 }
 
 // ── LOAD DATA ─────────────────────────────────────────────────────────────
@@ -431,6 +529,82 @@ async function loadData(){
     console.error('Load error:',err);
     document.getElementById('last-load').textContent='Load failed — check Supabase URL';
   }finally{loading=false;}
+}
+
+// ── FUNDER CONTACTS ───────────────────────────────────────────────────────
+async function renderFunders(){
+  const el=document.getElementById('t-funders');
+  el.innerHTML=`<div style="margin-bottom:18px"><div style="font-size:20px;font-weight:800">🤝 Funder Contacts</div><div style="font-size:11px;color:var(--t3);margin-top:2px">Track relationships with program officers and foundation contacts</div></div><div style="text-align:center;padding:20px;color:var(--t3)">Loading…</div>`;
+  const {data,error}=await sb.from('funder_contacts').select('*').order('funder_name');
+  if(error){el.innerHTML+=`<div style="color:var(--red);font-size:12px;padding:10px">Error: ${error.message}</div>`;return;}
+  const contacts=data||[];
+  el.innerHTML=`
+    <div style="margin-bottom:18px;display:flex;justify-content:space-between;align-items:center">
+      <div><div style="font-size:20px;font-weight:800">🤝 Funder Contacts</div><div style="font-size:11px;color:var(--t3);margin-top:2px">${contacts.length} contacts · Track program officers and relationships</div></div>
+      <button onclick="openAddContact()" style="padding:7px 16px;border-radius:6px;border:1px solid var(--greenBd);background:var(--greenDim);color:var(--green);font-family:'Outfit',sans-serif;font-size:11px;font-weight:700;cursor:pointer">+ Add Contact</button>
+    </div>
+    <div id="add-contact-form" style="display:none;background:var(--card);border:1px solid var(--greenBd);border-radius:8px;padding:16px;margin-bottom:16px">
+      <div style="font-size:11px;font-weight:700;color:var(--green);margin-bottom:12px">New Funder Contact</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+        <div><div style="font-size:9px;color:var(--t3);margin-bottom:4px">Funder / Organization *</div><input id="nc-funder" type="text" placeholder="e.g. Gates Foundation" style="width:100%;background:var(--bg);border:1px solid var(--bd);border-radius:5px;padding:7px 9px;color:var(--t1);font-family:'Outfit',sans-serif;font-size:11px"></div>
+        <div><div style="font-size:9px;color:var(--t3);margin-bottom:4px">Contact Name</div><input id="nc-name" type="text" placeholder="Program Officer name" style="width:100%;background:var(--bg);border:1px solid var(--bd);border-radius:5px;padding:7px 9px;color:var(--t1);font-family:'Outfit',sans-serif;font-size:11px"></div>
+        <div><div style="font-size:9px;color:var(--t3);margin-bottom:4px">Email</div><input id="nc-email" type="email" placeholder="officer@foundation.org" style="width:100%;background:var(--bg);border:1px solid var(--bd);border-radius:5px;padding:7px 9px;color:var(--t1);font-family:'Outfit',sans-serif;font-size:11px"></div>
+        <div><div style="font-size:9px;color:var(--t3);margin-bottom:4px">Phone</div><input id="nc-phone" type="text" placeholder="555-000-0000" style="width:100%;background:var(--bg);border:1px solid var(--bd);border-radius:5px;padding:7px 9px;color:var(--t1);font-family:'Outfit',sans-serif;font-size:11px"></div>
+      </div>
+      <div style="margin-bottom:8px"><div style="font-size:9px;color:var(--t3);margin-bottom:4px">Relationship Notes</div><textarea id="nc-notes" rows="2" placeholder="How we met, interests, last conversation…" style="width:100%;background:var(--bg);border:1px solid var(--bd);border-radius:5px;padding:7px 9px;color:var(--t1);font-family:'Outfit',sans-serif;font-size:11px;resize:none"></textarea></div>
+      <div style="display:flex;gap:8px"><button onclick="saveNewContact()" style="padding:6px 16px;border-radius:5px;border:1px solid var(--greenBd);background:var(--greenDim);color:var(--green);font-family:'Outfit',sans-serif;font-size:11px;font-weight:700;cursor:pointer">Save Contact</button><button onclick="document.getElementById('add-contact-form').style.display='none'" style="padding:6px 14px;border-radius:5px;border:1px solid var(--bd);background:transparent;color:var(--t2);font-family:'Outfit',sans-serif;font-size:11px;cursor:pointer">Cancel</button></div>
+    </div>
+    ${contacts.length?contacts.map(c=>`
+      <div class="card-section" style="margin-bottom:8px">
+        <div style="display:flex;justify-content:space-between;align-items:start">
+          <div><div style="font-size:13px;font-weight:700;color:var(--t1);margin-bottom:3px">${c.funder_name}</div><div style="font-size:11px;color:var(--green);margin-bottom:4px">${c.contact_name||'No contact name'}</div><div style="display:flex;gap:12px;font-size:10px;color:var(--t2)">${c.contact_email?`<span>✉ ${c.contact_email}</span>`:''}${c.contact_phone?`<span>📞 ${c.contact_phone}</span>`:''}</div></div>
+          <div style="font-size:9px;color:var(--t3);text-align:right">${c.last_contact?'Last contact: '+fmtDate(c.last_contact):'No contact logged'}</div>
+        </div>
+        ${c.relationship_notes?`<div style="margin-top:8px;font-size:11px;color:var(--t2);line-height:1.6;padding-top:8px;border-top:1px solid var(--bd)">${c.relationship_notes}</div>`:''}
+      </div>`).join(''):`<div class="empty"><div class="empty-icon">🤝</div><div class="empty-title">No funder contacts yet</div><div class="empty-body">Add contacts from program officers, foundation reps, and agency staff you've connected with.</div></div>`}`;
+}
+
+function openAddContact(){
+  document.getElementById('add-contact-form').style.display='block';
+  document.getElementById('nc-funder').focus();
+}
+
+async function saveNewContact(){
+  const funder=document.getElementById('nc-funder').value.trim();
+  if(!funder){alert('Funder name is required');return;}
+  const {error}=await sb.from('funder_contacts').insert({
+    funder_name:funder,
+    contact_name:document.getElementById('nc-name').value.trim()||null,
+    contact_email:document.getElementById('nc-email').value.trim()||null,
+    contact_phone:document.getElementById('nc-phone').value.trim()||null,
+    relationship_notes:document.getElementById('nc-notes').value.trim()||null,
+    last_contact:new Date().toISOString().split('T')[0],
+  });
+  if(error){alert('Save failed: '+error.message);return;}
+  renderFunders();
+}
+
+// ── CSV EXPORT ────────────────────────────────────────────────────────────
+function exportCSV(){
+  if(!GRANTS.length){alert('No grants loaded to export.');return;}
+  const headers=['Title','Funder','Source','Score','Status','Amount Max','Deadline','Assigned To','Apply URL'];
+  const rows=GRANTS.map(g=>[
+    `"${(g.title||'').replace(/"/g,'""')}"`,
+    `"${(g.funder||'').replace(/"/g,'""')}"`,
+    g.source||'',
+    g.score||0,
+    g.status||'new',
+    g.amount_max||'',
+    g.deadline||'',
+    `"${(g.assigned_to||'').replace(/"/g,'""')}"`,
+    `"${(g.apply_url||'').replace(/"/g,'""')}"`,
+  ].join(','));
+  const csv=[headers.join(','),...rows].join('\n');
+  const blob=new Blob([csv],{type:'text/csv'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url;a.download=`grant-prime-export-${new Date().toISOString().split('T')[0]}.csv`;
+  a.click();URL.revokeObjectURL(url);
 }
 
 // ── BOOT ──────────────────────────────────────────────────────────────────
