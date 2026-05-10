@@ -2,6 +2,7 @@
   "name": "grant-prime",
   "version": "1.0.0",
   "description": "Automated grant discovery, scoring, and tracking for Noble Erne, LLC",
+  "type": "module",
   "main": "index.js",
   "scripts": {
     "discovery": "node agents/grant-discovery-agent.js",
