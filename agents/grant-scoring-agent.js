@@ -135,7 +135,14 @@ AUTOMATIC HIGH SCORES — Noble Erne (STEM):
 - Any grant mentioning: "STEM", "computer science education", "coding", "robotics", "cybersecurity education", "data science", "science and technology", "STEM workforce", "broadening participation", "NSF", "NIH education", "STEM after school" → Noble Erne scores 80+ (entity: "Noble Erne", label it STEM in reason)
 
 Return a JSON array ONLY — no markdown, no explanation outside the array.
-Format: [{"id": "<grant_uuid>", "score": <0-100>, "entity": "<Noble Erne|Walker Contractors|Both>", "reason": "<one sentence max 120 chars>"}]
+Format: [{"id": "<grant_uuid>", "score": <0-100>, "entity": "<Noble Erne|Walker Contractors|Both>", "category": "<EdTech|STEM|Construction|Foundation|Federal>", "reason": "<one sentence max 120 chars>"}]
+
+Category rules:
+- "STEM" if the grant is science/technology/engineering/math R&D, computer science education, robotics, NSF/NIH funded
+- "EdTech" if the grant is training, instructional design, workforce development, SAP/ERP, LMS, curriculum
+- "Construction" if the grant is building, renovation, facilities, infrastructure, SDVOSB/veteran construction
+- "Foundation" if the grant comes from a private foundation (non-government)
+- "Federal" for all other federal government grants that don't fit the above
 
 Grants to score:
 ${grantList}`;
@@ -167,13 +174,14 @@ async function updateScores(scores) {
   let updated = 0;
 
   for (const item of scores) {
-    // Write entity_fit as a dedicated field + keep it in notes for display
+    // Write entity_fit and category as dedicated fields for dashboard filtering
     const entityLabel = item.entity ? `[${item.entity}] ` : '';
     const { error } = await supabase
       .from('grants')
       .update({
         score: item.score,
         entity_fit: item.entity || 'Noble Erne',
+        category: item.category || 'Federal',
         notes: `${entityLabel}${item.reason || ''}`,
         status: 'scored',
       })
@@ -240,6 +248,21 @@ async function main() {
   }
 
   log(`=== Scoring Complete: ${totalUpdated}/${grants.length} grants scored ===`);
+
+  // Write run summary to system_log for dashboard daily briefing
+  try {
+    const highScore = grants.filter(g => g._scored_score >= 80).length; // approximate
+    await supabase.from('system_log').insert({
+      agent: 'grant-scoring-agent',
+      run_at: new Date().toISOString(),
+      status: 'success',
+      grants_found: grants.length,
+      grants_added: totalUpdated,
+      details: JSON.stringify({ total_scored: totalUpdated, batches: Math.ceil(grants.length / 20) }),
+    });
+  } catch (err) {
+    log(`System log write failed (non-fatal): ${err.message}`);
+  }
 }
 
 main().catch(err => {

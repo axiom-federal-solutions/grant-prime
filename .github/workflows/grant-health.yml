@@ -1,0 +1,34 @@
+name: System Health Monitor
+
+on:
+  schedule:
+    - cron: '30 13 * * *'  # 8:30 AM CT daily — after discovery (6AM) + scoring (6:15AM) + alerts (7:30AM)
+  workflow_dispatch:
+
+jobs:
+  health:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run health monitor
+        run: node agents/grant-health-monitor.js
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          SENDGRID_API_KEY: ${{ secrets.SENDGRID_API_KEY }}
+          SENDGRID_FROM_EMAIL: ${{ secrets.SENDGRID_FROM_EMAIL }}
+          ALERT_EMAIL: ${{ secrets.ALERT_EMAIL }}
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "Health monitor detected system failures on run ${{ github.run_id }}"
+          echo "Check logs: https://github.com/axiom-federal-solutions/grant-prime/actions/runs/${{ github.run_id }}"

@@ -476,6 +476,152 @@ function safeDate(dateStr) {
   } catch { return null; }
 }
 
+// ── Source 5: SBIR.gov — Small Business Innovation Research ──
+// Federal STEM + tech R&D funding for small businesses.
+// Public API, no key required. Primary STEM channel.
+async function fetchSBIR() {
+  log('Fetching SBIR.gov opportunities...');
+  const results = [];
+
+  const topics = ['training', 'education', 'workforce', 'cybersecurity', 'data', 'software', 'AI', 'STEM'];
+
+  for (const topic of topics) {
+    try {
+      const res = await fetchWithRetry(
+        `https://api.sbir.gov/public/api/solicitations?keyword=${encodeURIComponent(topic)}&rows=15&start=0&open=true`,
+        { headers: { 'Accept': 'application/json' } }
+      );
+      const json = await res.json();
+      const items = json?.response?.docs || json?.docs || [];
+
+      for (const item of items) {
+        const id = item.solicitation_number || item.solicitation_id || item.program_year + '-' + item.branch;
+        results.push({
+          source: 'edtech',
+          grant_id: `sbir-${String(id).replace(/\W/g, '-').slice(0, 40)}`,
+          title: (item.solicitation_title || item.program_title || 'SBIR Solicitation').slice(0, 200),
+          funder: `${item.agency || 'Federal'} SBIR/STTR`,
+          amount_max: item.award_ceiling ? Number(item.award_ceiling) : 150000, // Phase I typical
+          deadline: item.close_date ? safeDate(item.close_date) : null,
+          description: (item.program_description || item.abstract || '').slice(0, 800),
+          eligibility: 'Small business (≤500 employees), US-based, qualifying for SBIR/STTR programs',
+          naics: item.naics_code || null,
+          apply_url: item.solicitation_url || item.program_url || 'https://www.sbir.gov/solicitations',
+          status: 'new',
+        });
+      }
+      log(`  SBIR topic "${topic}": ${items.length} results`);
+      await sleep(800);
+    } catch (err) {
+      log(`  SBIR error for "${topic}": ${err.message}`);
+    }
+  }
+  return results;
+}
+
+// ── Source 6: NIH Reporter — Education / STEM / Health grants ─
+// NIH funds education, STEM, workforce health training programs.
+// Public API — no key required. Returns active opportunities.
+async function fetchNIH() {
+  log('Fetching NIH Reporter opportunities...');
+  const results = [];
+
+  const queries = [
+    { terms: ['workforce training', 'technology education', 'STEM education'] },
+    { terms: ['health information technology', 'digital health training'] },
+  ];
+
+  for (const q of queries) {
+    for (const term of q.terms) {
+      try {
+        const res = await fetchWithRetry('https://api.reporter.nih.gov/v2/projects/search', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            criteria: { advanced_text_search: { operator: 'and', search_field: 'all', search_text: term } },
+            include_fields: ['ProjectTitle','AbstractText','OrganizationName','AwardAmount','ProjectEndDate','ProjectStartDate','AgencyCode','NihSpendingCats'],
+            offset: 0,
+            limit: 10,
+            sort_field: 'project_start_date',
+            sort_order: 'desc',
+          }),
+        });
+        const json = await res.json();
+        const projects = json?.results || [];
+
+        for (const p of projects) {
+          // NIH Reporter returns funded projects, not open solicitations —
+          // use as intelligence on what NIH funds, flag as 'foundation' source
+          // so the dashboard shows them as research leads, not live applications.
+          results.push({
+            source: 'foundation',
+            grant_id: `nih-${(p.project_num || Math.random().toString(36).slice(2)).replace(/\W/g,'-').slice(0,40)}`,
+            title: (p.project_title || 'NIH Grant').slice(0, 200),
+            funder: `NIH / ${p.agency_code || 'HHS'}`,
+            amount_max: p.award_amount ? Number(p.award_amount) : null,
+            deadline: p.project_end_date ? safeDate(p.project_end_date) : null,
+            description: (p.abstract_text || '').slice(0, 800),
+            eligibility: 'Research institutions, universities, small businesses with SBIR/STTR eligibility',
+            naics: '541715', // R&D in physical/engineering/life sciences
+            apply_url: `https://reporter.nih.gov/project-details/${(p.project_num || '').replace(/\W/g,'')}`,
+            status: 'new',
+          });
+        }
+        log(`  NIH term "${term}": ${projects.length} results`);
+        await sleep(1000);
+      } catch (err) {
+        log(`  NIH error for "${term}": ${err.message}`);
+      }
+    }
+  }
+  return results;
+}
+
+// ── Eligibility Pre-Filter ────────────────────────────────────
+// Drop grants explicitly restricted to entity types Noble Erne
+// and Walker Contractors cannot be: state govts, tribal govts,
+// large universities (unless SBIR-eligible). Cuts noise ~40%.
+const INELIGIBLE_TYPES = [
+  'state governments',
+  'county governments',
+  'city or township governments',
+  'special district governments',
+  'native american tribal governments',
+  'native american tribal organizations',
+  'public and state controlled institutions',
+  'independent school districts',
+];
+
+function isEligible(grant) {
+  if (!grant.eligibility) return true; // no info → keep
+  const elig = grant.eligibility.toLowerCase();
+  // If eligibility ONLY lists government/tribal types and not "small business" or "private", drop it
+  const hasGovOnly = INELIGIBLE_TYPES.some(t => elig.includes(t));
+  const hasSmallBiz = /small business|private|nonprofit|for-profit|commercial|llc|corporation|company/.test(elig);
+  // Keep if small biz language present, or if no ineligible type detected
+  if (hasGovOnly && !hasSmallBiz) return false;
+  return true;
+}
+
+// ── Write system log to Supabase ──────────────────────────────
+async function writeSystemLog(stats) {
+  try {
+    await supabase.from('system_log').insert({
+      agent: 'grant-discovery-agent',
+      run_at: new Date().toISOString(),
+      status: 'success',
+      grants_found: stats.found,
+      grants_added: stats.added,
+      grants_filtered: stats.filtered,
+      sources_run: stats.sources,
+      details: JSON.stringify(stats),
+    });
+    log(`  System log written to Supabase`);
+  } catch (err) {
+    log(`  System log write failed (non-fatal): ${err.message}`);
+  }
+}
+
 // ── Main ─────────────────────────────────────────────────────
 async function main() {
   log('=== GRANT PRIME Discovery Agent Starting ===');
@@ -485,12 +631,14 @@ async function main() {
     process.exit(1);
   }
 
-  // Run all sources concurrently — if one fails the others still complete
-  const [kw, agencies, cats, foundation] = await Promise.allSettled([
+  // Run all sources concurrently — failures in one don't stop others
+  const [kw, agencies, cats, foundation, sbir, nih] = await Promise.allSettled([
     fetchGrantsGovKeywords(),
     fetchGrantsGovAgencies(),
     fetchGrantsGovCategories(),
     fetchFoundationRSS(),
+    fetchSBIR(),
+    fetchNIH(),
   ]);
 
   const allGrants = [
@@ -498,20 +646,27 @@ async function main() {
     ...(agencies.status   === 'fulfilled' ? agencies.value   : []),
     ...(cats.status       === 'fulfilled' ? cats.value       : []),
     ...(foundation.status === 'fulfilled' ? foundation.value : []),
+    ...(sbir.status       === 'fulfilled' ? sbir.value       : []),
+    ...(nih.status        === 'fulfilled' ? nih.value        : []),
   ];
 
   log(`Total grants found across all sources: ${allGrants.length}`);
 
-  // Deduplicate within this batch by grant_id before upserting
+  // ── Eligibility pre-filter — drop clearly ineligible grants before dedup/upsert
+  const eligible = allGrants.filter(isEligible);
+  const filtered = allGrants.length - eligible.length;
+  log(`Eligibility pre-filter: removed ${filtered} ineligible grants, ${eligible.length} remain`);
+
+  // ── Deduplicate within this batch by grant_id
   const seen = new Set();
-  const unique = allGrants.filter(g => {
+  const unique = eligible.filter(g => {
     if (!g.grant_id || seen.has(g.grant_id)) return false;
     seen.add(g.grant_id);
     return true;
   });
   log(`After local dedup: ${unique.length} unique grants`);
 
-  // Insert in batches of 50
+  // ── Insert in batches of 50
   let totalNew = 0;
   const batchSize = 50;
   for (let i = 0; i < unique.length; i += batchSize) {
@@ -521,6 +676,22 @@ async function main() {
     log(`  Batch ${Math.ceil(i / batchSize) + 1}: ${inserted} new grants added`);
     if (i + batchSize < unique.length) await sleep(500);
   }
+
+  // ── Write run summary to system_log for dashboard daily briefing
+  await writeSystemLog({
+    found: allGrants.length,
+    added: totalNew,
+    filtered,
+    unique: unique.length,
+    sources: {
+      grants_gov_keywords: kw.status === 'fulfilled' ? kw.value.length : 'failed',
+      grants_gov_agencies: agencies.status === 'fulfilled' ? agencies.value.length : 'failed',
+      grants_gov_categories: cats.status === 'fulfilled' ? cats.value.length : 'failed',
+      foundation_rss: foundation.status === 'fulfilled' ? foundation.value.length : 'failed',
+      sbir: sbir.status === 'fulfilled' ? sbir.value.length : 'failed',
+      nih: nih.status === 'fulfilled' ? nih.value.length : 'failed',
+    },
+  });
 
   log(`=== Discovery Complete: ${totalNew} new grants added to Supabase ===`);
 }

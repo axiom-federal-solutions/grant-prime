@@ -403,6 +403,129 @@ function renderEntityTab(entityTab){
   setTimeout(()=>{document.querySelectorAll('.qf-btn').forEach(b=>{b.style.background=b.dataset.f===qFilter?'var(--greenDim)':'var(--bg3)';b.style.borderColor=b.dataset.f===qFilter?'var(--greenBd)':'var(--bd)';});},0);
 }
 
+// ── SEARCH ENGINE ─────────────────────────────────────────────────────────
+// Fuzzy-match across all grants — same logic as IQE Prime filter-system.js
+// but self-contained with no external dependency.
+let _searchActive = false;
+function runGrantSearch() {
+  const inp = document.getElementById('gp-search-input');
+  const out = document.getElementById('gp-search-results');
+  if (!inp || !out) return;
+  const q = inp.value.trim().toLowerCase();
+  if (q.length < 2) { out.innerHTML = ''; out.style.display = 'none'; _searchActive = false; return; }
+  _searchActive = true;
+
+  const tokens = q.split(/\s+/).filter(Boolean);
+  const scored = [];
+
+  for (const g of GRANTS) {
+    const haystack = [g.title||'', g.funder||'', g.description||'', g.eligibility||'', g.naics||'', g.source||'', g.category||'', g.entity_fit||'', g.notes||''].join(' ').toLowerCase();
+    let score = 0;
+    let allMatch = true;
+    for (const tok of tokens) {
+      if (haystack.includes(tok)) score += 10;
+      else { allMatch = false; }
+    }
+    if (!allMatch) continue;
+    const titleLo = (g.title||'').toLowerCase();
+    for (const tok of tokens) if (titleLo.includes(tok)) score += 8;
+    if ((g.naics||'').toLowerCase().startsWith(q)) score += 25;
+    if ((g.funder||'').toLowerCase().includes(q)) score += 12;
+    scored.push({ g, score });
+  }
+
+  scored.sort((a, b) => b.score - a.score);
+  const results = scored.slice(0, 30);
+
+  if (!results.length) {
+    out.style.display = 'block';
+    out.innerHTML = `<div style="padding:14px 16px;font-size:12px;color:var(--t3)">No matches for "${q}" — try a funder name, NAICS code, or keyword</div>`;
+    return;
+  }
+
+  out.style.display = 'block';
+  out.innerHTML = `<div style="padding:8px 16px 4px;font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em;font-weight:700">${results.length} result${results.length>1?'s':''}</div>` +
+    results.map(({g}) => `
+      <div onclick="openGrantDetail('${g.grant_id}')" style="padding:10px 16px;border-top:1px solid var(--bd);cursor:pointer;display:grid;grid-template-columns:1fr 52px 80px;gap:8px;align-items:center;transition:background .15s" onmouseover="this.style.background='var(--bg3)'" onmouseout="this.style.background=''">
+        <div>
+          <div style="font-size:12px;font-weight:600;color:var(--t1);margin-bottom:2px">${(g.title||'Untitled').slice(0,62)}${(g.title||'').length>62?'…':''}</div>
+          <div style="font-size:10px;color:var(--t3)">${g.funder||'—'} · <span style="color:${srcColor(g.source)}">${srcLabel(g.source)}</span>${g.naics?` · NAICS ${g.naics}`:''}</div>
+        </div>
+        <div style="font-size:15px;font-weight:800;color:${sc(g.score||0)};text-align:center">${g.score||'—'}</div>
+        <div style="text-align:right;font-size:11px;color:var(--t2)">${fmtDate(g.deadline)}</div>
+      </div>`).join('');
+}
+function clearGrantSearch() {
+  const inp = document.getElementById('gp-search-input');
+  const out = document.getElementById('gp-search-results');
+  if (inp) inp.value = '';
+  if (out) { out.innerHTML = ''; out.style.display = 'none'; }
+  _searchActive = false;
+}
+
+// ── DAILY BRIEFING — load from system_log ─────────────────────────────────
+let _briefing = null;
+async function loadBriefing() {
+  if (!sb) return;
+  try {
+    const today = new Date(); today.setHours(0,0,0,0);
+    const [discRes, scoreRes, healthRes] = await Promise.all([
+      sb.from('system_log').select('*').eq('agent','grant-discovery-agent').gte('run_at', today.toISOString()).order('run_at',{ascending:false}).limit(1),
+      sb.from('system_log').select('*').eq('agent','grant-scoring-agent').gte('run_at', today.toISOString()).order('run_at',{ascending:false}).limit(1),
+      sb.from('system_log').select('*').eq('agent','grant-health-monitor').gte('run_at', today.toISOString()).order('run_at',{ascending:false}).limit(1),
+    ]);
+    _briefing = {
+      discovery: discRes.data?.[0] || null,
+      scoring:   scoreRes.data?.[0] || null,
+      health:    healthRes.data?.[0] || null,
+    };
+  } catch(e) { _briefing = null; }
+}
+
+function briefingCard() {
+  const d = _briefing?.discovery;
+  const s = _briefing?.scoring;
+  const h = _briefing?.health;
+  const hStatus = h?.status || 'unknown';
+  const hColor  = hStatus==='healthy'?'var(--green)':hStatus==='degraded'?'var(--red)':'var(--t3)';
+  const hIcon   = hStatus==='healthy'?'✅':hStatus==='degraded'?'⚠️':'❓';
+
+  const agentRow = (label, log, color) => {
+    if (!log) return `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--bd)"><span style="font-size:11px;color:var(--t3)">${label}</span><span style="font-size:10px;color:var(--t3)">Not run today</span></div>`;
+    const t = new Date(log.run_at).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
+    return `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--bd)"><span style="font-size:11px;color:var(--t1);font-weight:600">${label}</span><div style="text-align:right"><span style="font-size:11px;color:${color};font-weight:700">+${log.grants_added||0}</span><span style="font-size:9px;color:var(--t3);margin-left:6px">${t}</span></div></div>`;
+  };
+
+  // Category breakdown from today's GRANTS data
+  const catCounts = {EdTech:0,STEM:0,Construction:0,Foundation:0,Federal:0};
+  GRANTS.forEach(g=>{ const c=g.category||'Federal'; if(catCounts[c]!==undefined) catCounts[c]++; });
+  const catColors = {EdTech:'var(--cyan)',STEM:'var(--violet)',Construction:'var(--green)',Foundation:'var(--gold)',Federal:'var(--t2)'};
+  const catIcons  = {EdTech:'💼',STEM:'🔬',Construction:'🏗️',Foundation:'🏦',Federal:'🏛️'};
+
+  return `
+  <div style="background:var(--bg3);border:1px solid var(--bd);border-radius:10px;padding:16px 18px;margin-bottom:16px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <div style="font-size:13px;font-weight:800;color:var(--t1)">📋 Today's Briefing</div>
+      <div style="display:flex;align-items:center;gap:6px">
+        <span style="font-size:10px;font-weight:700;color:${hColor}">${hIcon} ${hStatus.toUpperCase()}</span>
+        <span style="font-size:9px;color:var(--t3)">${new Date().toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})}</span>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div>
+        <div style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em;font-weight:700;margin-bottom:6px">Agent Runs</div>
+        ${agentRow('Discovery',d,'var(--cyan)')}
+        ${agentRow('Scoring',s,'var(--violet)')}
+      </div>
+      <div>
+        <div style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em;font-weight:700;margin-bottom:6px">Category Breakdown</div>
+        ${Object.entries(catCounts).filter(([,v])=>v>0).map(([cat,n])=>`<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--bd)"><span style="font-size:10px;color:${catColors[cat]}">${catIcons[cat]} ${cat}</span><span style="font-size:11px;font-weight:700;color:var(--t1)">${n}</span></div>`).join('')||'<div style="font-size:10px;color:var(--t3);padding:4px 0">Run discovery to populate</div>'}
+      </div>
+    </div>
+    ${h && h.status==='degraded'?`<div style="margin-top:10px;padding:8px 12px;background:var(--redDim);border:1px solid rgba(248,113,113,.3);border-radius:6px;font-size:11px;color:var(--red);font-weight:600">⚠️ System issues detected — check email for details</div>`:''}
+  </div>`;
+}
+
 // ── COMMAND CENTER ────────────────────────────────────────────────────────
 function renderHome(){
   const el=document.getElementById('t-home');
@@ -418,9 +541,23 @@ function renderHome(){
   GRANTS.forEach(g=>{if(srcCounts[g.source]!==undefined)srcCounts[g.source]++;});
 
   el.innerHTML=`
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px">
-      <div><div style="font-size:20px;font-weight:800">Command Center</div><div style="font-size:11px;color:var(--t3);margin-top:2px">GRANT PRIME · Noble Erne, LLC · treagent1@gmail.com</div></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+      <div><div style="font-size:20px;font-weight:800">Command Center</div><div style="font-size:11px;color:var(--t3);margin-top:2px">GRANT PRIME · Noble Erne, LLC &amp; Walker Contractors LLC</div></div>
       <button class="refresh-btn" onclick="loadData()">↻ Refresh</button>
+    </div>
+
+    ${briefingCard()}
+
+    <!-- Search bar -->
+    <div style="position:relative;margin-bottom:16px">
+      <div style="display:flex;align-items:center;background:var(--bg3);border:1px solid var(--bd);border-radius:8px;padding:0 12px;transition:border-color .2s" onfocusin="this.style.borderColor='var(--greenBd)'" onfocusout="this.style.borderColor='var(--bd)'">
+        <span style="font-size:14px;color:var(--t3);margin-right:8px;flex-shrink:0">🔍</span>
+        <input id="gp-search-input" type="search" placeholder="Search all grants — title, funder, NAICS, category, keyword…"
+          oninput="runGrantSearch()" autocomplete="off"
+          style="flex:1;padding:10px 0;background:transparent;border:none;outline:none;color:var(--t1);font-family:'Outfit',sans-serif;font-size:12px;min-width:0">
+        <button onclick="clearGrantSearch()" style="background:none;border:none;color:var(--t3);cursor:pointer;font-size:13px;padding:4px;flex-shrink:0" title="Clear">✕</button>
+      </div>
+      <div id="gp-search-results" style="display:none;position:absolute;top:calc(100% + 4px);left:0;right:0;background:var(--bg2);border:1px solid var(--bd);border-radius:8px;max-height:400px;overflow-y:auto;z-index:50;box-shadow:0 8px 24px rgba(0,0,0,.4)"></div>
     </div>
     <div class="kpi-row">
       <div class="kpi"><div class="kpi-val">${total}</div><div class="kpi-lbl">Total Grants Found</div><div class="kpi-sub">All sources</div></div>
@@ -696,6 +833,7 @@ async function loadData(){
     const {data,error}=await sb.from('grants').select('*').order('score',{ascending:false}).limit(500);
     if(error)throw error;
     GRANTS=data||[];
+    await loadBriefing();
     document.getElementById('last-load').textContent='Updated '+new Date().toLocaleTimeString();
     const urgent=GRANTS.filter(g=>{const d=daysLeft(g.deadline);return d!==null&&d<=14&&g.score>=65&&g.status!=='closed'&&g.status!=='won'&&g.status!=='applied';}).length;
     const btn=document.getElementById('sb-action');
