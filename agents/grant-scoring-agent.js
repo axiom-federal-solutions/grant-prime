@@ -37,18 +37,33 @@ const anthropic = new Anthropic({
 //
 // NAICS codes sourced from IQE PRIME config/settings.json and scout-state.js
 const COMPANY_PROFILES = `
-ENTITY 1 — Noble Erne, LLC
+ENTITY 1 — Noble Erne, LLC (Ed / Tech category)
 Type: IT consulting firm, LLC, small business, can prime or sub
 Primary capabilities: SAP implementation & upgrades, Instructional Design, Software Administration, Training Program Management, eLearning (SCORM/xAPI), LMS administration
 Industries: Technology, Oil & Gas, Retail, Government/Military, Finance & Banking, Manufacturing & Industrial, EdTech, Workforce Development
-NAICS codes (Noble Erne):
+NAICS codes (Noble Erne — Ed/Tech):
   541511 — Custom Computer Programming Services
   541512 — Computer Systems Design Services
   541519 — Other Computer Related Services (SAP/ERP admin)
   541611 — Administrative Management and General Management Consulting
   541618 — Other Management Consulting Services
   611430 — Professional and Management Development Training
+  611420 — Computer Training
+  611699 — All Other Miscellaneous Schools and Instruction
+  611710 — Educational Support Services
 Best fit: workforce development grants, IT training funding, SAP/ERP technology programs, EdTech initiatives, capacity building, employee training programs, instructional design contracts
+
+ENTITY 1B — Noble Erne, LLC (STEM category — overlapping)
+Noble Erne can also pursue STEM-adjacent grants where technology training, computer science education, or IT capacity building is the primary focus.
+NAICS codes (STEM overlap):
+  541715 — Research and Development in the Physical, Engineering, and Life Sciences
+  541720 — Research and Development in the Social Sciences and Humanities
+  611310 — Colleges, Universities and Professional Schools (partnership grants)
+  611519 — Other Technical and Trade Schools
+  611420 — Computer Training (STEM education pathway)
+  334111 — Electronic Computer Manufacturing (deep STEM)
+  519130 — Internet Publishing and Broadcasting (EdTech/STEM platform)
+Best fit: STEM workforce pipeline grants, computer science education funding, coding bootcamp support, data science training, STEM teacher development, NSF/NIH education supplements
 
 ENTITY 2 — Walker Contractors LLC (DBA: Axiom Federal Solutions)
 Type: Construction/renovation/facilities firm, SDVOSB certified, VOSB eligible, small business
@@ -113,8 +128,11 @@ AUTOMATIC HIGH SCORES — Walker Contractors:
 - Any grant mentioning: "veteran", "SDVOSB", "VOSB", "service-disabled veteran", "veteran-owned", "veteran set-aside", "veteran contractor", "VA construction", "veteran entrepreneur" → Walker scores 88+
 - Any construction, renovation, facilities, or infrastructure grant → Walker scores 75+
 
-AUTOMATIC HIGH SCORES — Noble Erne:
-- Any grant mentioning: "workforce development", "instructional design", "SAP", "ERP", "IT training", "software training", "eLearning", "EdTech", "technology training", "employee training" → Noble Erne scores 85+
+AUTOMATIC HIGH SCORES — Noble Erne (Ed/Tech):
+- Any grant mentioning: "workforce development", "instructional design", "SAP", "ERP", "IT training", "software training", "eLearning", "EdTech", "technology training", "employee training", "LMS", "curriculum development", "professional development" → Noble Erne scores 85+
+
+AUTOMATIC HIGH SCORES — Noble Erne (STEM):
+- Any grant mentioning: "STEM", "computer science education", "coding", "robotics", "cybersecurity education", "data science", "science and technology", "STEM workforce", "broadening participation", "NSF", "NIH education", "STEM after school" → Noble Erne scores 80+ (entity: "Noble Erne", label it STEM in reason)
 
 Return a JSON array ONLY — no markdown, no explanation outside the array.
 Format: [{"id": "<grant_uuid>", "score": <0-100>, "entity": "<Noble Erne|Walker Contractors|Both>", "reason": "<one sentence max 120 chars>"}]

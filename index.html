@@ -173,9 +173,10 @@ if(sessionStorage.getItem('gp_auth')==='1'){document.getElementById('pin-screen'
   <button class="sb-btn active" onclick="go('home',this)">🏠 Command Center</button>
   <div class="sb-group">Alerts</div>
   <button class="sb-btn" onclick="go('action',this)" id="sb-action">🚨 Action Queue</button>
-  <div class="sb-group">By Entity</div>
-  <button class="sb-btn" onclick="go('noble-erne',this)">💼 Noble Erne<span class="sb-dot" style="background:var(--cyan);box-shadow:0 0 6px var(--cyan)"></span></button>
-  <button class="sb-btn" onclick="go('walker',this)">🏗️ Walker Contractors<span class="sb-dot" style="background:var(--green);box-shadow:0 0 6px var(--green)"></span></button>
+  <div class="sb-group">By Category</div>
+  <button class="sb-btn" onclick="go('edtech-tab',this)">💼 Ed / Tech<span class="sb-dot" style="background:var(--cyan);box-shadow:0 0 6px var(--cyan)"></span></button>
+  <button class="sb-btn" onclick="go('stem-tab',this)">🔬 STEM<span class="sb-dot" style="background:var(--violet);box-shadow:0 0 6px var(--violet)"></span></button>
+  <button class="sb-btn" onclick="go('construction-tab',this)">🏗️ Construction<span class="sb-dot" style="background:var(--green);box-shadow:0 0 6px var(--green)"></span></button>
   <button class="sb-btn" onclick="go('all-grants',this)">📄 All Grants<span class="sb-dot" style="background:var(--t2)"></span></button>
   <div class="sb-group">By Source</div>
   <button class="sb-btn" onclick="go('federal',this)">🏛️ Federal<span class="sb-dot" style="background:var(--cyan);box-shadow:0 0 6px var(--cyan)"></span></button>
@@ -199,8 +200,9 @@ if(sessionStorage.getItem('gp_auth')==='1'){document.getElementById('pin-screen'
 <div class="main" id="mc">
   <div id="t-home"         class="tab active"></div>
   <div id="t-action"       class="tab" style="display:none"></div>
-  <div id="t-noble-erne"   class="tab" style="display:none"></div>
-  <div id="t-walker"       class="tab" style="display:none"></div>
+  <div id="t-edtech-tab"     class="tab" style="display:none"></div>
+  <div id="t-stem-tab"       class="tab" style="display:none"></div>
+  <div id="t-construction-tab" class="tab" style="display:none"></div>
   <div id="t-all-grants"   class="tab" style="display:none"></div>
   <div id="t-federal"      class="tab" style="display:none"></div>
   <div id="t-edtech"       class="tab" style="display:none"></div>
@@ -263,8 +265,9 @@ function openDetail(html){document.getElementById('det-content').innerHTML=html;
 function render(tab){
   const fns={
     home:renderHome,action:renderAction,
-    'noble-erne':()=>renderEntityTab('noble-erne'),
-    'walker':()=>renderEntityTab('walker'),
+    'edtech-tab':()=>renderEntityTab('edtech-tab'),
+    'stem-tab':()=>renderEntityTab('stem-tab'),
+    'construction-tab':()=>renderEntityTab('construction-tab'),
     'all-grants':()=>renderEntityTab('all-grants'),
     federal:()=>renderGrantList('federal'),edtech:()=>renderGrantList('edtech'),
     state:()=>renderGrantList('state'),foundation:()=>renderGrantList('foundation'),
@@ -274,26 +277,65 @@ function render(tab){
   if(fns[tab])fns[tab]();
 }
 
-// ── ENTITY TABS ─────────────────────────────────────────────────────────────
+// ── NAICS / KEYWORD MATCHERS ─────────────────────────────────────────────────
+// Ed/Tech: Noble Erne NAICS + training/IT/consulting keywords
+const EDTECH_NAICS=['541511','541512','541519','541611','541618','611430','611420','611699','611710'];
+const EDTECH_KW=/workforce|instructional design|SAP|ERP|IT training|software training|elearning|edtech|technology training|employee training|consulting|capacity building|software implementation|lms|curriculum|professional development/i;
+
+// STEM: science, technology, engineering, math R&D + education NAICS
+const STEM_NAICS=['541715','541720','611310','611210','611110','611519','611411','334111','334413','519130'];
+const STEM_KW=/\bSTEM\b|science|engineering|mathematics|math|research and development|\bR&D\b|innovation|laboratory|computer science|data science|coding|robotics|biotech|biotechnology|nanotechnology|aerospace|physics|chemistry|biology|artificial intelligence|\bAI\b|machine learning|cybersecurity|quantum|NSF|NIH|DARPA/i;
+
+// Construction: Walker NAICS + construction/facilities keywords
+const CONSTRUCTION_NAICS=['236220','238210','237990','236116','561730','424710','424130','424490','424120','424410'];
+const CONSTRUCTION_KW=/construction|renovation|facilities|infrastructure|building|contractor|electrical|landscaping|civil engineering|HUBZone|veteran set-aside|SDVOSB|VOSB|veteran contractor|veteran owned|service-disabled|VA construction|DOD facilities|supply chain|janitorial/i;
+
+function grantMatchesEdTech(g){
+  const ef=(g.entity_fit||'').toLowerCase();
+  const src=(g.source||'');
+  const text=((g.title||'')+' '+(g.description||'')+' '+(g.eligibility||'')).toLowerCase();
+  if(ef.includes('noble erne')||ef==='both') return true;
+  if(src==='edtech') return true;
+  if(EDTECH_NAICS.some(n=>g.naics&&g.naics.startsWith(n))) return true;
+  if(EDTECH_KW.test(g.title+' '+g.description)) return true;
+  return false;
+}
+function grantMatchesSTEM(g){
+  const text=(g.title||'')+' '+(g.description||'');
+  if(STEM_NAICS.some(n=>g.naics&&g.naics.startsWith(n))) return true;
+  if(STEM_KW.test(text)) return true;
+  return false;
+}
+function grantMatchesConstruction(g){
+  const ef=(g.entity_fit||'').toLowerCase();
+  const text=(g.title||'')+' '+(g.description||'');
+  if(ef.includes('walker')||ef.includes('sdvosb')) return true;
+  if(CONSTRUCTION_NAICS.some(n=>g.naics&&g.naics.startsWith(n))) return true;
+  if(CONSTRUCTION_KW.test(text)) return true;
+  return false;
+}
+
+// ── CATEGORY TABS ─────────────────────────────────────────────────────────────
 function renderEntityTab(entityTab){
   _currentEntityTab=entityTab;
   const el=document.getElementById('t-'+entityTab);
-  let grants, icon, label, accentColor;
+  let grants, icon, label, accentColor, subtitle;
 
-  if(entityTab==='noble-erne'){
-    icon='💼'; label='Noble Erne, LLC'; accentColor='var(--cyan)';
-    grants=GRANTS.filter(g=>{
-      const ef=(g.entity_fit||g.notes||'').toLowerCase();
-      return !ef.includes('walker')||ef.includes('both');
-    });
-  } else if(entityTab==='walker'){
-    icon='🏗️'; label='Walker Contractors LLC · SDVOSB'; accentColor='var(--green)';
-    grants=GRANTS.filter(g=>{
-      const ef=(g.entity_fit||g.notes||'').toLowerCase();
-      return ef.includes('walker')||ef.includes('sdvosb')||ef.includes('veteran')||ef.includes('both');
-    });
+  if(entityTab==='edtech-tab'){
+    icon='💼'; label='Ed / Tech'; accentColor='var(--cyan)';
+    subtitle='Education · Technology · Training · Instructional Design · SAP/ERP · Workforce Development';
+    grants=GRANTS.filter(grantMatchesEdTech);
+  } else if(entityTab==='stem-tab'){
+    icon='🔬'; label='STEM'; accentColor='var(--violet)';
+    subtitle='Science · Technology · Engineering · Mathematics · R&D · Innovation · Computer Science';
+    grants=GRANTS.filter(grantMatchesSTEM);
+  } else if(entityTab==='construction-tab'){
+    icon='🏗️'; label='Construction · SDVOSB'; accentColor='var(--green)';
+    subtitle='Federal Construction · Renovation · Facilities · Supply Chain · Veteran Set-Aside Programs';
+    grants=GRANTS.filter(grantMatchesConstruction);
   } else {
     icon='📄'; label='All Grants'; accentColor='var(--t2)';
+    subtitle='Every discovered opportunity across all categories and sources';
     grants=[...GRANTS];
   }
 
@@ -312,6 +354,7 @@ function renderEntityTab(entityTab){
       <div>
         <div style="font-size:20px;font-weight:800">${icon} ${label}</div>
         <div style="font-size:11px;color:var(--t3);margin-top:2px">${grants.length} grants · ${filtered.length} showing · sorted by score</div>
+        <div style="font-size:10px;color:var(--t3);margin-top:3px;opacity:.7">${subtitle}</div>
       </div>
       <button class="refresh-btn" onclick="loadData()">↻ Refresh</button>
     </div>
@@ -328,7 +371,7 @@ function renderEntityTab(entityTab){
     <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
       <button class="qf-btn" data-f="closing30" onclick="setQFilter('closing30')" style="font-size:10px;font-weight:700;padding:5px 10px;border-radius:5px;border:1px solid var(--bd);background:var(--bg3);color:var(--t2);cursor:pointer;letter-spacing:.04em">🔴 Closing ≤30d</button>
       <button class="qf-btn" data-f="score80" onclick="setQFilter('score80')" style="font-size:10px;font-weight:700;padding:5px 10px;border-radius:5px;border:1px solid var(--bd);background:var(--bg3);color:var(--t2);cursor:pointer;letter-spacing:.04em">⭐ Score ≥80</button>
-      <button class="qf-btn" data-f="walker" onclick="setQFilter('walker')" style="font-size:10px;font-weight:700;padding:5px 10px;border-radius:5px;border:1px solid var(--bd);background:var(--bg3);color:var(--t2);cursor:pointer;letter-spacing:.04em">🏗️ SDVOSB/Walker Only</button>
+      <button class="qf-btn" data-f="walker" onclick="setQFilter('walker')" style="font-size:10px;font-weight:700;padding:5px 10px;border-radius:5px;border:1px solid var(--bd);background:var(--bg3);color:var(--t2);cursor:pointer;letter-spacing:.04em">🏗️ Construction / SDVOSB</button>
     </div>
 
     <!-- Grant rows -->
@@ -400,7 +443,8 @@ function renderHome(){
             ${(()=>{
               const neCount=GRANTS.filter(g=>{const ef=(g.entity_fit||g.notes||'').toLowerCase();return !ef.includes('walker')||ef.includes('both');}).length;
               const wkCount=GRANTS.filter(g=>{const ef=(g.entity_fit||g.notes||'').toLowerCase();return ef.includes('walker')||ef.includes('sdvosb')||ef.includes('veteran');}).length;
-              return `<div style="margin-bottom:8px"><div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:4px"><span style="color:var(--cyan);font-weight:600">💼 Noble Erne</span><span style="color:var(--t2)">${neCount} grants</span></div><div class="bar"><div class="bar-fill" style="width:${total?Math.round(neCount/total*100):0}%;background:var(--cyan)"></div></div></div><div><div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:4px"><span style="color:var(--green);font-weight:600">🏗️ Walker SDVOSB</span><span style="color:var(--t2)">${wkCount} grants</span></div><div class="bar"><div class="bar-fill" style="width:${total?Math.round(wkCount/total*100):0}%;background:var(--green)"></div></div></div>`;
+              const stCount=GRANTS.filter(grantMatchesSTEM).length;
+              return `<div style="margin-bottom:8px"><div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:4px"><span style="color:var(--cyan);font-weight:600">💼 Ed / Tech</span><span style="color:var(--t2)">${neCount} grants</span></div><div class="bar"><div class="bar-fill" style="width:${total?Math.round(neCount/total*100):0}%;background:var(--cyan)"></div></div></div><div style="margin-bottom:8px"><div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:4px"><span style="color:var(--violet);font-weight:600">🔬 STEM</span><span style="color:var(--t2)">${stCount} grants</span></div><div class="bar"><div class="bar-fill" style="width:${total?Math.round(stCount/total*100):0}%;background:var(--violet)"></div></div></div><div><div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:4px"><span style="color:var(--green);font-weight:600">🏗️ Construction/SDVOSB</span><span style="color:var(--t2)">${wkCount} grants</span></div><div class="bar"><div class="bar-fill" style="width:${total?Math.round(wkCount/total*100):0}%;background:var(--green)"></div></div></div>`;
             })()}
           </div>
         </div>
@@ -485,7 +529,9 @@ function renderPerformance(){
         const neVal=ne.reduce((a,g)=>a+(g.amount_max||0),0);
         const wkVal=wk.reduce((a,g)=>a+(g.amount_max||0),0);
         const makeRow=(label,color,grants,pipelineVal)=>`<div style="margin-bottom:14px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><span style="font-size:12px;font-weight:700;color:${color}">${label}</span><span style="font-size:11px;color:var(--t2)">${grants.length} grants · ${fmt(pipelineVal)} pipeline</span></div><div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;background:var(--bg3);border-radius:6px;padding:8px 12px;border:1px solid var(--bd)">${['new','scored','applied','won'].map(st=>`<div style="text-align:center"><div style="font-size:15px;font-weight:800;color:${st==='won'?'var(--green)':st==='applied'?'var(--gold)':st==='scored'?color:'var(--t2)'}">${grants.filter(g=>g.status===st).length}</div><div style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.07em">${st}</div></div>`).join('')}</div></div>`;
-        return makeRow('💼 Noble Erne, LLC','var(--cyan)',ne,neVal)+makeRow('🏗️ Walker Contractors LLC (SDVOSB)','var(--green)',wk,wkVal);
+        const st=GRANTS.filter(grantMatchesSTEM);
+        const stVal=st.reduce((a,g)=>a+(g.amount_max||0),0);
+        return makeRow('💼 Ed / Tech (Noble Erne)','var(--cyan)',ne,neVal)+makeRow('🔬 STEM','var(--violet)',st,stVal)+makeRow('🏗️ Construction / SDVOSB (Walker)','var(--green)',wk,wkVal);
       })()}
     </div>
     <div class="card-section"><div class="card-title">Performance by Source</div>${srcStats.map(s=>`<div style="display:flex;align-items:center;gap:16px;padding:10px 0;border-bottom:1px solid var(--bd)"><div style="color:${srcColor(s.src)};font-size:12px;font-weight:700;width:130px">${srcLabel(s.src)}</div><div style="flex:1"><div style="display:flex;justify-content:space-between;font-size:10px;color:var(--t2);margin-bottom:3px"><span>${s.count} found · ${s.applied} applied · ${s.won} won</span><span style="font-weight:700;color:${sc(s.avgScore)}">Avg ${s.avgScore}</span></div><div class="bar"><div class="bar-fill" style="width:${total?Math.round(s.count/total*100):0}%;background:${srcColor(s.src)}"></div></div></div></div>`).join('')}</div>

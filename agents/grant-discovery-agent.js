@@ -73,6 +73,21 @@ async function fetchGrantsGovKeywords() {
     'EdTech',
     'software implementation training',
     'capacity building technology',
+    'professional development grant',
+    'learning management system',
+    // STEM — Science, Technology, Engineering, Mathematics
+    'STEM education grant',
+    'science technology engineering mathematics',
+    'STEM workforce',
+    'computer science education',
+    'coding education grant',
+    'research and development grant',
+    'STEM innovation',
+    'robotics education',
+    'cybersecurity education',
+    'data science training',
+    'STEM after school',
+    'broadening participation STEM',
     // Walker Contractors — SDVOSB / Veteran / Construction
     'service-disabled veteran owned small business',
     'SDVOSB',
@@ -136,16 +151,21 @@ async function fetchGrantsGovAgencies() {
   const results = [];
 
   const agencies = [
-    // Noble Erne — IT / Training / EdTech agencies
+    // Ed / Tech — training, workforce, consulting
     { code: 'DOL', name: 'U.S. Department of Labor',              source: 'edtech'   },
     { code: 'ED',  name: 'U.S. Department of Education',          source: 'edtech'   },
+    // STEM — science, research, innovation
     { code: 'NSF', name: 'National Science Foundation',            source: 'edtech'   },
+    { code: 'HHS', name: 'U.S. Dept of Health & Human Services',  source: 'edtech'   }, // NIH/SBIR
+    { code: 'NASA','name': 'National Aeronautics & Space Admin',   source: 'edtech'   },
+    { code: 'DOE', name: 'U.S. Department of Energy',             source: 'edtech'   }, // STEM R&D
+    { code: 'NIST','name': 'Natl Institute of Standards & Tech',  source: 'federal'  },
     // Shared — federal / general small business
     { code: 'HUD', name: 'U.S. Dept of Housing & Urban Dev',      source: 'state'    },
     { code: 'SBA', name: 'U.S. Small Business Administration',    source: 'federal'  },
     { code: 'DOC', name: 'U.S. Department of Commerce',           source: 'federal'  },
     { code: 'DOD', name: 'U.S. Department of Defense',            source: 'federal'  },
-    // Walker Contractors — SDVOSB / Veteran / Construction agencies
+    // Construction / SDVOSB / Veteran
     { code: 'VA',  name: 'U.S. Dept of Veterans Affairs',         source: 'federal'  },
     { code: 'DOT', name: 'U.S. Department of Transportation',     source: 'federal'  },
     { code: 'GSA', name: 'General Services Administration',       source: 'federal'  },
@@ -198,11 +218,19 @@ async function fetchGrantsGovCategories() {
   const results = [];
 
   const categories = [
+    // Ed / Tech
     { code: 'WD',  label: 'Workforce Development'       },
     { code: 'ED',  label: 'Education'                   },
     { code: 'ELT', label: 'Employment Labor Training'   },
     { code: 'BC',  label: 'Business and Commerce'       },
     { code: 'ISS', label: 'Information and Statistics'  },
+    // STEM
+    { code: 'ST',  label: 'Science and Technology'      },
+    { code: 'ENV', label: 'Environment (STEM overlap)'  },
+    { code: 'HL',  label: 'Health (NIH/STEM pipeline)'  },
+    // Construction / Infrastructure
+    { code: 'CD',  label: 'Community Development'       },
+    { code: 'T',   label: 'Transportation'              },
   ];
 
   for (const cat of categories) {
@@ -283,6 +311,22 @@ async function fetchFoundationRSS() {
     {
       name: 'Robert Wood Johnson Foundation',
       url: 'https://www.rwjf.org/en.rss',
+      source: 'foundation',
+    },
+    // STEM-specific feeds
+    {
+      name: 'Bill & Melinda Gates Foundation',
+      url: 'https://www.gatesfoundation.org/ideas/rss',
+      source: 'foundation',
+    },
+    {
+      name: 'Spencer Foundation (Education R&D)',
+      url: 'https://www.spencer.org/feed',
+      source: 'foundation',
+    },
+    {
+      name: 'Simons Foundation (STEM)',
+      url: 'https://www.simonsfoundation.org/feed/',
       source: 'foundation',
     },
   ];
