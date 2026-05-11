@@ -565,17 +565,6 @@ function renderHome(){
 
     ${briefingCard()}
 
-    <!-- Search bar -->
-    <div style="position:relative;margin-bottom:16px">
-      <div style="display:flex;align-items:center;background:var(--bg3);border:1px solid var(--bd);border-radius:8px;padding:0 12px;transition:border-color .2s" onfocusin="this.style.borderColor='var(--greenBd)'" onfocusout="this.style.borderColor='var(--bd)'">
-        <span style="font-size:14px;color:var(--t3);margin-right:8px;flex-shrink:0">🔍</span>
-        <input id="gp-search-input" type="search" placeholder="Search all grants — title, funder, NAICS, category, keyword…"
-          oninput="runGrantSearch()" autocomplete="off"
-          style="flex:1;padding:10px 0;background:transparent;border:none;outline:none;color:var(--t1);font-family:'Outfit',sans-serif;font-size:12px;min-width:0">
-        <button onclick="clearGrantSearch()" style="background:none;border:none;color:var(--t3);cursor:pointer;font-size:13px;padding:4px;flex-shrink:0" title="Clear">✕</button>
-      </div>
-      <div id="gp-search-results" style="display:none;position:absolute;top:calc(100% + 4px);left:0;right:0;background:var(--bg2);border:1px solid var(--bd);border-radius:8px;max-height:400px;overflow-y:auto;z-index:50;box-shadow:0 8px 24px rgba(0,0,0,.4)"></div>
-    </div>
     <div class="kpi-row">
       <div class="kpi"><div class="kpi-val">${total}</div><div class="kpi-lbl">Total Grants Found</div><div class="kpi-sub">All sources</div></div>
       <div class="kpi"><div class="kpi-val" style="color:var(--green)">${hot}</div><div class="kpi-lbl">High Match (≥80)</div><div class="kpi-sub">Strong fits</div></div>
@@ -583,6 +572,18 @@ function renderHome(){
       <div class="kpi"><div class="kpi-val" style="color:var(--red)">${closing7}</div><div class="kpi-lbl">Closing ≤7 Days</div><div class="kpi-sub">Urgent</div></div>
       <div class="kpi"><div class="kpi-val" style="color:var(--violet)">${won}</div><div class="kpi-lbl">Grants Won</div><div class="kpi-sub">Funded</div></div>
       <div class="kpi"><div class="kpi-val" style="color:var(--cyan)">${fmt(pipeline)}</div><div class="kpi-lbl">Pipeline Value</div><div class="kpi-sub">Applied total</div></div>
+    </div>
+
+    <!-- Search bar — below KPIs, dropdown uses fixed positioning to avoid overlap -->
+    <div id="gp-search-wrap" style="position:relative;margin-bottom:16px;z-index:100">
+      <div style="display:flex;align-items:center;background:var(--bg3);border:1px solid var(--bd);border-radius:8px;padding:0 12px;transition:border-color .2s" onfocusin="this.style.borderColor='var(--greenBd)'" onfocusout="this.style.borderColor='var(--bd)'">
+        <span style="font-size:14px;color:var(--t3);margin-right:8px;flex-shrink:0">🔍</span>
+        <input id="gp-search-input" type="search" placeholder="Search all grants — title, funder, NAICS, category, keyword…"
+          oninput="runGrantSearch()" autocomplete="off"
+          style="flex:1;padding:10px 0;background:transparent;border:none;outline:none;color:var(--t1);font-family:'Outfit',sans-serif;font-size:12px;min-width:0">
+        <button onclick="clearGrantSearch()" style="background:none;border:none;color:var(--t3);cursor:pointer;font-size:13px;padding:4px;flex-shrink:0" title="Clear">✕</button>
+      </div>
+      <div id="gp-search-results" style="display:none;position:absolute;top:calc(100% + 4px);left:0;right:0;background:var(--bg2);border:1px solid var(--bd);border-radius:8px;max-height:420px;overflow-y:auto;z-index:9999;box-shadow:0 12px 40px rgba(0,0,0,.6)"></div>
     </div>
     <div class="grid2">
       <div>
@@ -965,7 +966,7 @@ if(sessionStorage.getItem('gp_auth')==='1'){loadData();setInterval(()=>loadData(
 
 // Close search dropdown when clicking outside
 document.addEventListener('click', e => {
-  const wrap = document.getElementById('gp-search-input')?.closest('div[style*="position:relative"]');
+  const wrap = document.getElementById('gp-search-wrap');
   const out  = document.getElementById('gp-search-results');
   if (out && wrap && !wrap.contains(e.target)) {
     out.innerHTML = ''; out.style.display = 'none'; _searchActive = false;
