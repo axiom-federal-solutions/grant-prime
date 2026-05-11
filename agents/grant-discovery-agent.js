@@ -46,11 +46,14 @@ async function fetchWithRetry(url, options = {}, retries = 3) {
 }
 
 // Insert grants — skip duplicates using grant_id unique constraint
+// Stamps first_seen_year only on NEW inserts (ignoreDuplicates: true skips existing rows)
 async function upsertGrants(grants) {
   if (!grants.length) return 0;
+  const currentYear = new Date().getFullYear();
+  const stamped = grants.map(g => ({ ...g, first_seen_year: g.first_seen_year || currentYear }));
   const { data, error } = await supabase
     .from('grants')
-    .upsert(grants, { onConflict: 'grant_id', ignoreDuplicates: true })
+    .upsert(stamped, { onConflict: 'grant_id', ignoreDuplicates: true })
     .select('id');
   if (error) { log(`  Supabase upsert error: ${error.message}`); return 0; }
   return data?.length || 0;

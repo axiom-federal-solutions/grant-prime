@@ -143,15 +143,23 @@ function buildEmailHTML(grants, dateStr) {
 </html>`;
 }
 
-// ── Log alerts to Supabase ───────────────────────────────────
+// ── Log alerts to Supabase (upsert prevents duplicate rows on re-runs) ───
 async function logAlerts(grants) {
+  const today = new Date().toISOString().split('T')[0];
   const alertRows = grants.map(g => ({
-    grant_id: g.id,
-    alert_type: 'daily_digest',
+    grant_id:   g.id,
+    alert_type: 'urgent_deadline',
+    alerted_on: today,          // date-scoped — one row per grant per day
   }));
 
-  const { error } = await supabase.from('grant_alerts').insert(alertRows);
+  // ON CONFLICT (grant_id, alert_type, alerted_on) DO NOTHING prevents duplicates
+  // Requires a unique constraint — see SQL migration 004
+  const { error } = await supabase
+    .from('grant_alerts')
+    .upsert(alertRows, { onConflict: 'grant_id,alert_type,alerted_on', ignoreDuplicates: true });
+
   if (error) log(`  Alert log error: ${error.message}`);
+  else log(`  Logged ${alertRows.length} alert records (duplicates ignored)`);
 }
 
 // ── Main ─────────────────────────────────────────────────────

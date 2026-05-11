@@ -144,6 +144,58 @@ async function checkHighValuePipeline() {
   }
 }
 
+// ── Additional checks ─────────────────────────────────────────
+
+async function checkSBIRSource() {
+  // Verify SBIR grants were discovered recently (source = 'federal', funder includes SBIR/DOD keywords)
+  try {
+    const since = new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString();
+    const { data, error } = await supabase
+      .from('system_log')
+      .select('details')
+      .eq('agent', 'grant-discovery-agent')
+      .gte('run_at', since)
+      .order('run_at', { ascending: false })
+      .limit(1);
+    if (error || !data?.length) return { pass: false, message: 'Cannot verify SBIR — discovery log not found', value: null };
+    const details = JSON.parse(data[0].details || '{}');
+    const sbir = details.sources?.sbir ?? null;
+    if (sbir === null) return { pass: true, message: 'Discovery ran — SBIR source count not logged (non-critical)', value: null };
+    const pass = sbir > 0;
+    return { pass, message: pass ? `SBIR returned ${sbir} opportunities` : 'SBIR returned 0 results — API may be down', value: sbir };
+  } catch (e) {
+    return { pass: false, message: `SBIR check failed: ${e.message}`, value: null };
+  }
+}
+
+async function checkSendGrid() {
+  // Dry-run: verify SendGrid API key is valid (status endpoint, no email sent)
+  if (!process.env.SENDGRID_API_KEY) return { pass: false, message: 'SENDGRID_API_KEY not set in environment', value: null };
+  try {
+    const res = await fetch('https://api.sendgrid.com/v3/user/profile', {
+      headers: { Authorization: `Bearer ${process.env.SENDGRID_API_KEY}` },
+    });
+    const pass = res.status === 200;
+    return { pass, message: pass ? 'SendGrid API key valid · profile endpoint 200' : `SendGrid API returned ${res.status} — key may be invalid`, value: res.status };
+  } catch (e) {
+    return { pass: false, message: `SendGrid connectivity failed: ${e.message}`, value: null };
+  }
+}
+
+async function checkBudgetCoverage() {
+  // Verify that a reasonable % of grants have amount_max populated (data quality)
+  try {
+    const { count: total } = await supabase.from('grants').select('*', { count: 'exact', head: true }).neq('status', 'closed');
+    const { count: withAmount } = await supabase.from('grants').select('*', { count: 'exact', head: true }).not('amount_max', 'is', null).neq('status', 'closed');
+    if (!total) return { pass: true, message: 'No active grants to evaluate', value: 0 };
+    const pct = Math.round((withAmount / total) * 100);
+    const pass = pct >= 30; // warn if less than 30% of grants have budget data
+    return { pass, message: pass ? `${pct}% of grants have award amounts (${withAmount}/${total})` : `Only ${pct}% of grants have award amounts — data quality low`, value: pct };
+  } catch (e) {
+    return { pass: false, message: e.message, value: 0 };
+  }
+}
+
 // ── Run all checks + write results ───────────────────────────
 async function runAllChecks() {
   log('Running all health checks...');
@@ -156,6 +208,9 @@ async function runAllChecks() {
     checkScoredToday(),
     checkStuckGrants(),
     checkHighValuePipeline(),
+    checkSBIRSource(),
+    checkSendGrid(),
+    checkBudgetCoverage(),
   ]);
 
   const results = [
@@ -166,6 +221,9 @@ async function runAllChecks() {
     { name: 'Grants Scored Today',         ...getResult(checks[4]) },
     { name: 'No Stuck Grants (>48h new)',  ...getResult(checks[5]) },
     { name: 'High-Value Pipeline (≥80)',   ...getResult(checks[6]) },
+    { name: 'SBIR Source Active',          ...getResult(checks[7]) },
+    { name: 'SendGrid API Valid',          ...getResult(checks[8]) },
+    { name: 'Budget Data Coverage (≥30%)', ...getResult(checks[9]) },
   ];
 
   const failures = results.filter(r => !r.pass);

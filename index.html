@@ -244,6 +244,13 @@ function sdvosbBadge(g){
   const isWalker=ent.includes('walker')||ent.includes('sdvosb');
   return isWalker?`<span style="font-size:8px;font-weight:800;color:var(--green);background:var(--greenDim);border:1px solid var(--greenBd);border-radius:3px;padding:1px 5px;letter-spacing:.06em;white-space:nowrap">SDVOSB</span>`:'';
 }
+function renewalBadge(g){
+  const yr = g.first_seen_year;
+  const cur = new Date().getFullYear();
+  if (!yr || yr >= cur) return '';
+  const yrs = cur - yr;
+  return `<span title="Recurring grant — first seen ${yr}" style="font-size:8px;font-weight:800;color:var(--gold);background:rgba(233,196,106,.12);border:1px solid rgba(233,196,106,.35);border-radius:3px;padding:1px 5px;letter-spacing:.06em;white-space:nowrap">↻ ${yrs}yr</span>`;
+}
 // Quick filter state
 let qFilter='';
 function setQFilter(f){qFilter=qFilter===f?'':f;document.querySelectorAll('.qf-btn').forEach(b=>{b.style.background=b.dataset.f===qFilter?'var(--greenDim)':'var(--bg3)';b.style.borderColor=b.dataset.f===qFilter?'var(--greenBd)':'var(--bd)';});renderCurrentEntity();}
@@ -388,7 +395,7 @@ function renderEntityTab(entityTab){
             <div>
               <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
                 <span style="font-size:12px;font-weight:600">${(g.title||'Untitled').slice(0,54)}${(g.title||'').length>54?'…':''}</span>
-                ${sdvosbBadge(g)}
+                ${sdvosbBadge(g)}${renewalBadge(g)}
               </div>
               <div style="font-size:10px;color:var(--t3);margin-top:2px">${g.funder||'—'} · <span style="color:${srcColor(g.source)}">${srcLabel(g.source)}</span></div>
             </div>
@@ -486,6 +493,16 @@ function briefingCard() {
   const d = _briefing?.discovery;
   const s = _briefing?.scoring;
   const h = _briefing?.health;
+
+  // First-run onboarding: no agents have ever run
+  const neverRun = _briefing !== null && !d && !s && !h && GRANTS.length === 0;
+  if (neverRun) return `
+  <div style="background:var(--bg3);border:1px solid rgba(52,211,153,.25);border-radius:10px;padding:16px 18px;margin-bottom:16px">
+    <div style="font-size:13px;font-weight:800;color:var(--t1);margin-bottom:8px">🚀 System Ready — Waiting for First Run</div>
+    <div style="font-size:11px;color:var(--t2);line-height:1.6">Agents haven't run yet today. Trigger the <strong style="color:var(--cyan)">Grant Discovery</strong> workflow in GitHub Actions to populate your pipeline.</div>
+    <a href="${GH_ACTIONS}" target="_blank" style="display:inline-block;margin-top:10px;padding:6px 14px;border-radius:6px;border:1px solid var(--greenBd);background:var(--greenDim);color:var(--green);font-family:'Outfit',sans-serif;font-size:11px;font-weight:700;text-decoration:none">▶ Open GitHub Actions →</a>
+  </div>`;
+
   const hStatus = h?.status || 'unknown';
   const hColor  = hStatus==='healthy'?'var(--green)':hStatus==='degraded'?'var(--red)':'var(--t3)';
   const hIcon   = hStatus==='healthy'?'✅':hStatus==='degraded'?'⚠️':'❓';
@@ -600,12 +617,32 @@ function renderHome(){
 }
 
 // ── ACTION QUEUE ──────────────────────────────────────────────────────────
+let _aqBudget = 0; // 0 = no filter, else minimum amount_max
+function setAQBudget(v){
+  _aqBudget = _aqBudget === v ? 0 : v;
+  renderAction();
+}
 function renderAction(){
   const el=document.getElementById('t-action');
-  const urgent=GRANTS.filter(g=>{const d=daysLeft(g.deadline);return d!==null&&d<=14&&g.score>=65&&g.status!=='closed'&&g.status!=='won'&&g.status!=='applied';}).sort((a,b)=>daysLeft(a.deadline)-daysLeft(b.deadline));
+  let urgent=GRANTS.filter(g=>{const d=daysLeft(g.deadline);return d!==null&&d<=14&&g.score>=65&&g.status!=='closed'&&g.status!=='won'&&g.status!=='applied';});
+  if (_aqBudget > 0) urgent = urgent.filter(g => (g.amount_max||0) >= _aqBudget || g.amount_max === null);
+  urgent = urgent.sort((a,b)=>daysLeft(a.deadline)-daysLeft(b.deadline));
+
+  const budgetBtns = [
+    {label:'All Amounts', v:0},
+    {label:'$10K+', v:10000},
+    {label:'$50K+', v:50000},
+    {label:'$100K+', v:100000},
+    {label:'$250K+', v:250000},
+  ].map(b=>`<button onclick="setAQBudget(${b.v})" style="padding:4px 10px;border-radius:5px;border:1px solid ${_aqBudget===b.v?'var(--greenBd)':'var(--bd)'};background:${_aqBudget===b.v?'var(--greenDim)':'var(--bg3)'};color:${_aqBudget===b.v?'var(--green)':'var(--t2)'};font-family:'Outfit',sans-serif;font-size:10px;font-weight:600;cursor:pointer">${b.label}</button>`).join('');
+
   el.innerHTML=`
-    <div style="margin-bottom:18px"><div style="font-size:20px;font-weight:800">🚨 Action Queue</div><div style="font-size:11px;color:var(--t3);margin-top:2px">High-match grants · deadline ≤14 days · score ≥65 · not yet applied</div></div>
-    ${urgent.length?`<div style="display:grid;grid-template-columns:minmax(0,1fr) 70px 90px 80px 70px;gap:8px;padding:6px 14px;margin-bottom:4px"><span style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em">Grant</span><span style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em">Score</span><span style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em">Amount</span><span style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em">Deadline</span><span style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em">Days</span></div>${urgent.map(g=>{const d=daysLeft(g.deadline);return `<div class="grant-row ${urgencyClass(g.deadline)}" onclick="openGrantDetail('${g.grant_id}')"><div><div style="font-size:12px;font-weight:600">${(g.title||'Untitled').slice(0,56)}…</div><div style="font-size:10px;color:var(--t3);margin-top:2px">${g.funder||'—'} · <span style="color:${srcColor(g.source)}">${srcLabel(g.source)}</span></div></div><div style="font-size:16px;font-weight:800;color:${sc(g.score)}">${g.score}</div><div style="font-size:12px;font-weight:600">${fmt(g.amount_max)}</div><div style="font-size:11px">${fmtDate(g.deadline)}</div><div style="font-size:14px;font-weight:800;color:${d<=7?'var(--red)':'var(--amber)'}">${d}d</div></div>`;}).join('')}`:'<div class="empty"><div class="empty-icon">✅</div><div class="empty-title">Action queue clear</div><div class="empty-body">No high-match grants closing in the next 14 days.</div></div>'}`;
+    <div style="margin-bottom:12px"><div style="font-size:20px;font-weight:800">🚨 Action Queue</div><div style="font-size:11px;color:var(--t3);margin-top:2px">High-match grants · deadline ≤14 days · score ≥65 · not yet applied</div></div>
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:14px;flex-wrap:wrap">
+      <span style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em;font-weight:700;margin-right:2px">Award:</span>
+      ${budgetBtns}
+    </div>
+    ${urgent.length?`<div style="display:grid;grid-template-columns:minmax(0,1fr) 70px 90px 80px 70px;gap:8px;padding:6px 14px;margin-bottom:4px"><span style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em">Grant</span><span style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em">Score</span><span style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em">Amount</span><span style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em">Deadline</span><span style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em">Days</span></div>${urgent.map(g=>{const d=daysLeft(g.deadline);return `<div class="grant-row ${urgencyClass(g.deadline)}" onclick="openGrantDetail('${g.grant_id}')"><div><div style="font-size:12px;font-weight:600">${(g.title||'Untitled').slice(0,56)}…</div><div style="font-size:10px;color:var(--t3);margin-top:2px">${g.funder||'—'} · <span style="color:${srcColor(g.source)}">${srcLabel(g.source)}</span></div></div><div style="font-size:16px;font-weight:800;color:${sc(g.score)}">${g.score}</div><div style="font-size:12px;font-weight:600">${fmt(g.amount_max)}</div><div style="font-size:11px">${fmtDate(g.deadline)}</div><div style="font-size:14px;font-weight:800;color:${d<=7?'var(--red)':'var(--amber)'}">${d}d</div></div>`;}).join('')}`:'<div class="empty"><div class="empty-icon">✅</div><div class="empty-title">Action queue clear</div><div class="empty-body">No high-match grants closing in the next 14 days${_aqBudget>0?' at this award size':''}.${_aqBudget>0?' <button onclick="setAQBudget(0)" style="background:none;border:none;color:var(--green);cursor:pointer;font-family:inherit;font-size:11px;text-decoration:underline">Clear budget filter</button>':''}</div></div>'}`;
 }
 
 // ── GRANT LIST BY SOURCE ──────────────────────────────────────────────────
@@ -925,6 +962,15 @@ function exportCSV(){
 // ── BOOT ──────────────────────────────────────────────────────────────────
 renderHome();
 if(sessionStorage.getItem('gp_auth')==='1'){loadData();setInterval(()=>loadData(),300000);}
+
+// Close search dropdown when clicking outside
+document.addEventListener('click', e => {
+  const wrap = document.getElementById('gp-search-input')?.closest('div[style*="position:relative"]');
+  const out  = document.getElementById('gp-search-results');
+  if (out && wrap && !wrap.contains(e.target)) {
+    out.innerHTML = ''; out.style.display = 'none'; _searchActive = false;
+  }
+});
 </script>
 </body>
 </html>

@@ -40,8 +40,17 @@ CREATE TABLE IF NOT EXISTS system_log (
 -- Index for dashboard briefing queries (agent + run_at)
 CREATE INDEX IF NOT EXISTS idx_system_log_agent_run ON system_log (agent, run_at DESC);
 
--- 5. Verify columns exist
+-- 5. Add first_seen_year for renewal / multi-year grant tracking
+ALTER TABLE grants
+  ADD COLUMN IF NOT EXISTS first_seen_year INTEGER DEFAULT EXTRACT(YEAR FROM NOW())::INTEGER;
+
+-- Backfill from created_at for existing rows
+UPDATE grants
+  SET first_seen_year = EXTRACT(YEAR FROM created_at)::INTEGER
+WHERE first_seen_year IS NULL;
+
+-- 6. Verify columns exist
 SELECT column_name, data_type
 FROM information_schema.columns
 WHERE table_name = 'grants'
-  AND column_name IN ('category', 'entity_fit', 'naics', 'score', 'status');
+  AND column_name IN ('category', 'entity_fit', 'naics', 'score', 'status', 'first_seen_year');
