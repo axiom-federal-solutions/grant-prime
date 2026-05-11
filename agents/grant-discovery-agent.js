@@ -64,6 +64,7 @@ async function fetchGrantsGovKeywords() {
   const results = [];
 
   const keywords = [
+    // Noble Erne — IT / Training / EdTech
     'workforce development',
     'instructional design',
     'technology training',
@@ -72,6 +73,17 @@ async function fetchGrantsGovKeywords() {
     'EdTech',
     'software implementation training',
     'capacity building technology',
+    // Walker Contractors — SDVOSB / Veteran / Construction
+    'service-disabled veteran owned small business',
+    'SDVOSB',
+    'veteran owned business',
+    'veteran contractor',
+    'veteran set-aside',
+    'veteran entrepreneurship',
+    'small business veteran',
+    'construction grant federal',
+    'facilities renovation federal',
+    'infrastructure small business',
   ];
 
   for (const keyword of keywords) {
@@ -123,13 +135,19 @@ async function fetchGrantsGovAgencies() {
   const results = [];
 
   const agencies = [
+    // Noble Erne — IT / Training / EdTech agencies
     { code: 'DOL', name: 'U.S. Department of Labor',              source: 'edtech'   },
     { code: 'ED',  name: 'U.S. Department of Education',          source: 'edtech'   },
+    { code: 'NSF', name: 'National Science Foundation',            source: 'edtech'   },
+    // Shared — federal / general small business
     { code: 'HUD', name: 'U.S. Dept of Housing & Urban Dev',      source: 'state'    },
     { code: 'SBA', name: 'U.S. Small Business Administration',    source: 'federal'  },
     { code: 'DOC', name: 'U.S. Department of Commerce',           source: 'federal'  },
-    { code: 'NSF', name: 'National Science Foundation',            source: 'edtech'   },
     { code: 'DOD', name: 'U.S. Department of Defense',            source: 'federal'  },
+    // Walker Contractors — SDVOSB / Veteran / Construction agencies
+    { code: 'VA',  name: 'U.S. Dept of Veterans Affairs',         source: 'federal'  },
+    { code: 'DOT', name: 'U.S. Department of Transportation',     source: 'federal'  },
+    { code: 'GSA', name: 'General Services Administration',       source: 'federal'  },
   ];
 
   for (const agency of agencies) {

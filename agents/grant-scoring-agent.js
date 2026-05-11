@@ -6,7 +6,8 @@
 //   Runs after discovery agent each morning.
 //   Pulls all grants with status = 'new' from Supabase.
 //   Sends them to Claude Haiku in batches of 20.
-//   Haiku scores each 0–100 based on fit for Noble Erne.
+//   Haiku scores each 0–100 for Noble Erne LLC AND Walker Contractors LLC (SDVOSB).
+//   Entity fit stored in notes: [Noble Erne], [Walker Contractors], or [Both].
 //   Updates score and status = 'scored' in Supabase.
 //
 // Cost note:
@@ -29,18 +30,24 @@ const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
 
-// ── Noble Erne Profile ───────────────────────────────────────
-// This is what Haiku uses to score each grant.
-// Update this if Noble Erne's focus areas change.
-const NOBLE_ERNE_PROFILE = `
-Noble Erne, LLC is an IT consulting firm specializing in:
-- SAP implementation and upgrades (primary capability)
-- Instructional Design and curriculum development
-- Software Administration and training program management
-- Industries served: Technology, Oil & Gas, Retail, Government/Military, Finance & Banking, Manufacturing & Industrial, EdTech
-- Entity type: LLC, small business, consultant/training firm
-- Can serve as prime contractor or subcontractor
-- Strongest fit: workforce development funding, IT training grants, SAP-related technology programs, EdTech initiatives
+// ── Company Profiles ─────────────────────────────────────────
+// Two affiliated entities — score grants for EITHER or BOTH.
+// Walker Contractors is SDVOSB-certified — eligible for veteran
+// set-asides, VA contracts, and DOD small business programs.
+const COMPANY_PROFILES = `
+ENTITY 1 — Noble Erne, LLC
+- IT consulting firm: SAP implementation & upgrades (primary), Instructional Design, Software Administration, Training Program Management
+- Industries: Technology, Oil & Gas, Retail, Government/Military, Finance & Banking, Manufacturing & Industrial, EdTech
+- Entity type: LLC, small business, can prime or sub
+- Best fit: workforce development, IT training grants, SAP/ERP technology programs, EdTech, capacity building
+
+ENTITY 2 — Walker Contractors LLC
+- Construction, renovation, and facilities services firm
+- SDVOSB certified (Service-Disabled Veteran-Owned Small Business)
+- VOSB eligible (Veteran-Owned Small Business programs)
+- Industries: federal construction, infrastructure, facilities maintenance, government renovation projects
+- Entity type: SDVOSB/VOSB small business — qualifies for veteran set-aside contracts and grants
+- Best fit: VA construction/renovation grants, DOD facilities programs, veteran entrepreneurship funding, HUBZone-eligible programs, SBA SDVOSB set-asides, infrastructure grants, federal construction opportunities
 `;
 
 // ── Helpers ──────────────────────────────────────────────────
@@ -65,18 +72,25 @@ Grant ${i + 1}:
   Eligibility: ${(g.eligibility || '').slice(0, 200)}
 `).join('\n---\n');
 
-  const prompt = `You are scoring grant opportunities for Noble Erne, LLC.
+  const prompt = `You are scoring grant opportunities for two affiliated companies.
 
-Company Profile:
-${NOBLE_ERNE_PROFILE}
+Company Profiles:
+${COMPANY_PROFILES}
 
 Scoring guide:
 - 80–100: Strong match (relevant industry + eligible entity type + right scope of work)
-- 50–79: Partial match (some overlap with company capabilities or industries)
-- 0–49: Poor fit (wrong industry, wrong entity type, or company clearly ineligible)
+- 50–79: Partial match (some overlap with capabilities or industries)
+- 0–49: Poor fit (wrong industry, wrong entity type, or clearly ineligible)
 
-Score EACH grant below. Return a JSON array ONLY — no other text.
-Format: [{"id": "<grant_id>", "score": <0-100>, "reason": "<one sentence>"}]
+For each grant, determine:
+1. The best overall score (use whichever entity is the better fit — take the HIGHER score)
+2. Which entity is the best fit: "Noble Erne", "Walker Contractors", or "Both"
+3. A one-sentence reason explaining the fit and which entity should apply
+
+IMPORTANT — SDVOSB/veteran flags: If a grant mentions "veteran", "SDVOSB", "VOSB", "service-disabled", "veteran-owned", "veteran set-aside", or "VA" — Walker Contractors is strongly eligible, score 85+ unless clearly ineligible for other reasons.
+
+Return a JSON array ONLY — no other text.
+Format: [{"id": "<grant_id>", "score": <0-100>, "entity": "<Noble Erne|Walker Contractors|Both>", "reason": "<one sentence>"}]
 
 Grants to score:
 ${grantList}`;
@@ -108,11 +122,13 @@ async function updateScores(scores) {
   let updated = 0;
 
   for (const item of scores) {
+    // Prepend entity fit to notes so dashboard can display it
+    const entityLabel = item.entity ? `[${item.entity}] ` : '';
     const { error } = await supabase
       .from('grants')
       .update({
         score: item.score,
-        notes: item.reason,
+        notes: `${entityLabel}${item.reason || ''}`,
         status: 'scored',
       })
       .eq('id', item.id);
