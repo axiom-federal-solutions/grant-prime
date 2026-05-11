@@ -173,7 +173,11 @@ if(sessionStorage.getItem('gp_auth')==='1'){document.getElementById('pin-screen'
   <button class="sb-btn active" onclick="go('home',this)">🏠 Command Center</button>
   <div class="sb-group">Alerts</div>
   <button class="sb-btn" onclick="go('action',this)" id="sb-action">🚨 Action Queue</button>
-  <div class="sb-group">Find Grants</div>
+  <div class="sb-group">By Entity</div>
+  <button class="sb-btn" onclick="go('noble-erne',this)">💼 Noble Erne<span class="sb-dot" style="background:var(--cyan);box-shadow:0 0 6px var(--cyan)"></span></button>
+  <button class="sb-btn" onclick="go('walker',this)">🏗️ Walker Contractors<span class="sb-dot" style="background:var(--green);box-shadow:0 0 6px var(--green)"></span></button>
+  <button class="sb-btn" onclick="go('all-grants',this)">📄 All Grants<span class="sb-dot" style="background:var(--t2)"></span></button>
+  <div class="sb-group">By Source</div>
   <button class="sb-btn" onclick="go('federal',this)">🏛️ Federal<span class="sb-dot" style="background:var(--cyan);box-shadow:0 0 6px var(--cyan)"></span></button>
   <button class="sb-btn" onclick="go('edtech',this)">📚 EdTech / Workforce<span class="sb-dot" style="background:var(--green);box-shadow:0 0 6px var(--green)"></span></button>
   <button class="sb-btn" onclick="go('state',this)">🗺️ State & Local<span class="sb-dot" style="background:var(--gold);box-shadow:0 0 6px var(--gold)"></span></button>
@@ -195,6 +199,9 @@ if(sessionStorage.getItem('gp_auth')==='1'){document.getElementById('pin-screen'
 <div class="main" id="mc">
   <div id="t-home"         class="tab active"></div>
   <div id="t-action"       class="tab" style="display:none"></div>
+  <div id="t-noble-erne"   class="tab" style="display:none"></div>
+  <div id="t-walker"       class="tab" style="display:none"></div>
+  <div id="t-all-grants"   class="tab" style="display:none"></div>
   <div id="t-federal"      class="tab" style="display:none"></div>
   <div id="t-edtech"       class="tab" style="display:none"></div>
   <div id="t-state"        class="tab" style="display:none"></div>
@@ -229,6 +236,17 @@ function srcColor(s){return {federal:'var(--cyan)',edtech:'var(--green)',state:'
 function srcLabel(s){return {federal:'Federal',edtech:'EdTech/DOL',state:'State/Local',foundation:'Foundation'}[s]||s;}
 function statusPill(s){const m={new:'sp-new',scored:'sp-scored',applied:'sp-applied',won:'sp-won',closed:'sp-closed',rejected:'sp-closed'};return `<span class="${m[s]||'sp-new'}">${s}</span>`;}
 function urgencyClass(dl){const d=daysLeft(dl);if(d===null)return '';return d<=7?'urgent':d<=14?'warning':'';}
+function entityColor(e){if(!e)return 'var(--cyan)';if(e.toLowerCase().includes('walker'))return 'var(--green)';if(e.toLowerCase().includes('both'))return 'var(--violet)';return 'var(--cyan)';}
+function sdvosbBadge(g){
+  const ent=(g.entity_fit||g.notes||'').toLowerCase();
+  const isWalker=ent.includes('walker')||ent.includes('sdvosb');
+  return isWalker?`<span style="font-size:8px;font-weight:800;color:var(--green);background:var(--greenDim);border:1px solid var(--greenBd);border-radius:3px;padding:1px 5px;letter-spacing:.06em;white-space:nowrap">SDVOSB</span>`:'';
+}
+// Quick filter state
+let qFilter='';
+function setQFilter(f){qFilter=qFilter===f?'':f;document.querySelectorAll('.qf-btn').forEach(b=>{b.style.background=b.dataset.f===qFilter?'var(--greenDim)':'var(--bg3)';b.style.borderColor=b.dataset.f===qFilter?'var(--greenBd)':'var(--bd)';});renderCurrentEntity();}
+let _currentEntityTab='';
+function renderCurrentEntity(){if(_currentEntityTab)renderEntityTab(_currentEntityTab);}
 
 // ── NAV ───────────────────────────────────────────────────────────────────
 function go(tab,btn){
@@ -243,8 +261,103 @@ function closeDetail(){document.getElementById('det-ov').classList.remove('open'
 function openDetail(html){document.getElementById('det-content').innerHTML=html;document.getElementById('det-ov').classList.add('open');document.getElementById('det-pan').classList.add('open');}
 
 function render(tab){
-  const fns={home:renderHome,action:renderAction,federal:()=>renderGrantList('federal'),edtech:()=>renderGrantList('edtech'),state:()=>renderGrantList('state'),foundation:()=>renderGrantList('foundation'),applications:renderApplications,won:renderWon,deadlines:renderDeadlines,performance:renderPerformance,funders:renderFunders,agents:renderAgents,help:renderHelp};
+  const fns={
+    home:renderHome,action:renderAction,
+    'noble-erne':()=>renderEntityTab('noble-erne'),
+    'walker':()=>renderEntityTab('walker'),
+    'all-grants':()=>renderEntityTab('all-grants'),
+    federal:()=>renderGrantList('federal'),edtech:()=>renderGrantList('edtech'),
+    state:()=>renderGrantList('state'),foundation:()=>renderGrantList('foundation'),
+    applications:renderApplications,won:renderWon,deadlines:renderDeadlines,
+    performance:renderPerformance,funders:renderFunders,agents:renderAgents,help:renderHelp
+  };
   if(fns[tab])fns[tab]();
+}
+
+// ── ENTITY TABS ─────────────────────────────────────────────────────────────
+function renderEntityTab(entityTab){
+  _currentEntityTab=entityTab;
+  const el=document.getElementById('t-'+entityTab);
+  let grants, icon, label, accentColor;
+
+  if(entityTab==='noble-erne'){
+    icon='💼'; label='Noble Erne, LLC'; accentColor='var(--cyan)';
+    grants=GRANTS.filter(g=>{
+      const ef=(g.entity_fit||g.notes||'').toLowerCase();
+      return !ef.includes('walker')||ef.includes('both');
+    });
+  } else if(entityTab==='walker'){
+    icon='🏗️'; label='Walker Contractors LLC · SDVOSB'; accentColor='var(--green)';
+    grants=GRANTS.filter(g=>{
+      const ef=(g.entity_fit||g.notes||'').toLowerCase();
+      return ef.includes('walker')||ef.includes('sdvosb')||ef.includes('veteran')||ef.includes('both');
+    });
+  } else {
+    icon='📄'; label='All Grants'; accentColor='var(--t2)';
+    grants=[...GRANTS];
+  }
+
+  // Apply quick filters
+  let filtered=grants.sort((a,b)=>b.score-a.score);
+  if(qFilter==='closing30'){filtered=filtered.filter(g=>{const d=daysLeft(g.deadline);return d!==null&&d>=0&&d<=30;});}
+  else if(qFilter==='score80'){filtered=filtered.filter(g=>(g.score||0)>=80);}
+  else if(qFilter==='walker'){filtered=filtered.filter(g=>{const ef=(g.entity_fit||g.notes||'').toLowerCase();return ef.includes('walker')||ef.includes('sdvosb')||ef.includes('veteran');});}
+
+  const pipelineCounts={new:0,scored:0,applied:0,won:0};
+  grants.forEach(g=>{if(pipelineCounts[g.status]!==undefined)pipelineCounts[g.status]++;});
+  const pipelineTotal=Object.values(pipelineCounts).reduce((a,b)=>a+b,0)||1;
+
+  el.innerHTML=`
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px">
+      <div>
+        <div style="font-size:20px;font-weight:800">${icon} ${label}</div>
+        <div style="font-size:11px;color:var(--t3);margin-top:2px">${grants.length} grants · ${filtered.length} showing · sorted by score</div>
+      </div>
+      <button class="refresh-btn" onclick="loadData()">↻ Refresh</button>
+    </div>
+
+    <!-- Pipeline bar -->
+    <div style="background:var(--bg3);border:1px solid var(--bd);border-radius:8px;padding:12px 16px;margin-bottom:14px;display:grid;grid-template-columns:repeat(4,1fr);gap:8px;text-align:center">
+      <div><div style="font-size:16px;font-weight:800;color:var(--t2)">${pipelineCounts.new}</div><div style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.08em">New</div></div>
+      <div><div style="font-size:16px;font-weight:800;color:${accentColor}">${pipelineCounts.scored}</div><div style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.08em">Scored</div></div>
+      <div><div style="font-size:16px;font-weight:800;color:var(--gold)">${pipelineCounts.applied}</div><div style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.08em">Applied</div></div>
+      <div><div style="font-size:16px;font-weight:800;color:var(--green)">${pipelineCounts.won}</div><div style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.08em">Won</div></div>
+    </div>
+
+    <!-- Quick filters -->
+    <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
+      <button class="qf-btn" data-f="closing30" onclick="setQFilter('closing30')" style="font-size:10px;font-weight:700;padding:5px 10px;border-radius:5px;border:1px solid var(--bd);background:var(--bg3);color:var(--t2);cursor:pointer;letter-spacing:.04em">🔴 Closing ≤30d</button>
+      <button class="qf-btn" data-f="score80" onclick="setQFilter('score80')" style="font-size:10px;font-weight:700;padding:5px 10px;border-radius:5px;border:1px solid var(--bd);background:var(--bg3);color:var(--t2);cursor:pointer;letter-spacing:.04em">⭐ Score ≥80</button>
+      <button class="qf-btn" data-f="walker" onclick="setQFilter('walker')" style="font-size:10px;font-weight:700;padding:5px 10px;border-radius:5px;border:1px solid var(--bd);background:var(--bg3);color:var(--t2);cursor:pointer;letter-spacing:.04em">🏗️ SDVOSB/Walker Only</button>
+    </div>
+
+    <!-- Grant rows -->
+    ${filtered.length
+      ?`<div style="display:grid;grid-template-columns:minmax(0,1fr) 70px 90px 90px 70px;gap:8px;padding:6px 14px;margin-bottom:4px">
+          <span style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em">Grant</span>
+          <span style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em">Score</span>
+          <span style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em">Amount</span>
+          <span style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em">Deadline</span>
+          <span style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em">Status</span>
+        </div>
+        ${filtered.map(g=>`
+          <div class="grant-row ${urgencyClass(g.deadline)}" onclick="openGrantDetail('${g.grant_id}')">
+            <div>
+              <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+                <span style="font-size:12px;font-weight:600">${(g.title||'Untitled').slice(0,54)}${(g.title||'').length>54?'…':''}</span>
+                ${sdvosbBadge(g)}
+              </div>
+              <div style="font-size:10px;color:var(--t3);margin-top:2px">${g.funder||'—'} · <span style="color:${srcColor(g.source)}">${srcLabel(g.source)}</span></div>
+            </div>
+            <div style="font-size:16px;font-weight:800;color:${sc(g.score||0)}">${g.score||'—'}</div>
+            <div style="font-size:12px;font-weight:600">${fmt(g.amount_max)}</div>
+            <div style="font-size:11px">${fmtDate(g.deadline)}</div>
+            <div>${statusPill(g.status||'new')}</div>
+          </div>`).join('')}`
+      :`<div class="empty"><div class="empty-icon">${icon}</div><div class="empty-title">No grants match this filter</div><div class="empty-body">${grants.length===0?`Run the grant discovery agent to pull opportunities.<br><br><a href="${GH_ACTIONS}" target="_blank" style="color:var(--green);text-decoration:none">▶ Trigger GitHub Action →</a>`:'Try clearing the quick filter above.'}</div></div>`
+    }`;
+  // Re-apply filter button active states after render
+  setTimeout(()=>{document.querySelectorAll('.qf-btn').forEach(b=>{b.style.background=b.dataset.f===qFilter?'var(--greenDim)':'var(--bg3)';b.style.borderColor=b.dataset.f===qFilter?'var(--greenBd)':'var(--bd)';});},0);
 }
 
 // ── COMMAND CENTER ────────────────────────────────────────────────────────
@@ -278,11 +391,18 @@ function renderHome(){
       <div>
         <div class="card-section">
           <div class="card-title">🔥 Top Scored Grants</div>
-          ${top.length?top.map(g=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--bd);cursor:pointer" onclick="openGrantDetail('${g.grant_id}')"><div><div style="font-size:12px;font-weight:600">${(g.title||'Untitled').slice(0,52)}…</div><div style="font-size:10px;color:var(--t3)">${g.funder||'—'} · ${srcLabel(g.source)}</div></div><div style="text-align:right;flex-shrink:0;margin-left:12px"><div style="font-size:16px;font-weight:800;color:${sc(g.score)}">${g.score}</div><div style="font-size:9px;color:var(--t3)">${fmtDate(g.deadline)}</div></div></div>`).join(''):'<div class="empty"><div class="empty-icon">🔍</div><div class="empty-title">No scored grants yet</div><div class="empty-body">Run the scoring agent first</div></div>'}
+          ${top.length?top.map(g=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--bd);cursor:pointer" onclick="openGrantDetail('${g.grant_id}')"><div style="flex:1;min-width:0"><div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap"><span style="font-size:12px;font-weight:600">${(g.title||'Untitled').slice(0,46)}…</span>${sdvosbBadge(g)}</div><div style="font-size:10px;color:var(--t3)">${g.funder||'—'} · ${srcLabel(g.source)}</div></div><div style="text-align:right;flex-shrink:0;margin-left:12px"><div style="font-size:16px;font-weight:800;color:${sc(g.score)}">${g.score}</div><div style="font-size:9px;color:var(--t3)">${fmtDate(g.deadline)}</div></div></div>`).join(''):'<div class="empty"><div class="empty-icon">🔍</div><div class="empty-title">No scored grants yet</div><div class="empty-body">Run the scoring agent first</div></div>'}
         </div>
         <div class="card-section">
-          <div class="card-title">📊 Source Breakdown</div>
-          ${[['federal','🏛️ Federal',srcCounts.federal],['edtech','📚 EdTech/DOL',srcCounts.edtech],['state','🗺️ State/Local',srcCounts.state],['foundation','🏦 Foundation',srcCounts.foundation]].map(([src,label,count])=>`<div style="margin-bottom:10px"><div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:4px"><span style="color:${srcColor(src)};font-weight:600">${label}</span><span style="color:var(--t2)">${count} grants</span></div><div class="bar"><div class="bar-fill" style="width:${total?Math.round(count/total*100):0}%;background:${srcColor(src)}"></div></div></div>`).join('')}
+          <div class="card-title">📊 Breakdown by Source &amp; Entity</div>
+          ${[['federal','🏛️ Federal',srcCounts.federal],['edtech','📚 EdTech/DOL',srcCounts.edtech],['state','🗺️ State/Local',srcCounts.state],['foundation','🏦 Foundation',srcCounts.foundation]].map(([src,lbl,count])=>`<div style="margin-bottom:10px"><div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:4px"><span style="color:${srcColor(src)};font-weight:600">${lbl}</span><span style="color:var(--t2)">${count} grants</span></div><div class="bar"><div class="bar-fill" style="width:${total?Math.round(count/total*100):0}%;background:${srcColor(src)}"></div></div></div>`).join('')}
+          <div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--bd)">
+            ${(()=>{
+              const neCount=GRANTS.filter(g=>{const ef=(g.entity_fit||g.notes||'').toLowerCase();return !ef.includes('walker')||ef.includes('both');}).length;
+              const wkCount=GRANTS.filter(g=>{const ef=(g.entity_fit||g.notes||'').toLowerCase();return ef.includes('walker')||ef.includes('sdvosb')||ef.includes('veteran');}).length;
+              return `<div style="margin-bottom:8px"><div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:4px"><span style="color:var(--cyan);font-weight:600">💼 Noble Erne</span><span style="color:var(--t2)">${neCount} grants</span></div><div class="bar"><div class="bar-fill" style="width:${total?Math.round(neCount/total*100):0}%;background:var(--cyan)"></div></div></div><div><div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:4px"><span style="color:var(--green);font-weight:600">🏗️ Walker SDVOSB</span><span style="color:var(--t2)">${wkCount} grants</span></div><div class="bar"><div class="bar-fill" style="width:${total?Math.round(wkCount/total*100):0}%;background:var(--green)"></div></div></div>`;
+            })()}
+          </div>
         </div>
       </div>
       <div>
@@ -315,7 +435,7 @@ function renderGrantList(source){
   const grants=GRANTS.filter(g=>g.source===source).sort((a,b)=>b.score-a.score);
   el.innerHTML=`
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px"><div><div style="font-size:20px;font-weight:800">${icon} ${label}</div><div style="font-size:11px;color:var(--t3);margin-top:2px">${grants.length} grants · sorted by score</div></div><button class="refresh-btn" onclick="loadData()">↻ Refresh</button></div>
-    ${grants.length?`<div style="display:grid;grid-template-columns:minmax(0,1fr) 70px 90px 90px 70px;gap:8px;padding:6px 14px;margin-bottom:4px"><span style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em">Grant</span><span style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em">Score</span><span style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em">Amount</span><span style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em">Deadline</span><span style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em">Status</span></div>${grants.map(g=>`<div class="grant-row ${urgencyClass(g.deadline)}" onclick="openGrantDetail('${g.grant_id}')"><div><div style="font-size:12px;font-weight:600">${(g.title||'Untitled').slice(0,58)}${(g.title||'').length>58?'…':''}</div><div style="font-size:10px;color:var(--t3);margin-top:2px">${g.funder||'—'}</div></div><div style="font-size:16px;font-weight:800;color:${sc(g.score||0)}">${g.score||'—'}</div><div style="font-size:12px;font-weight:600">${fmt(g.amount_max)}</div><div style="font-size:11px">${fmtDate(g.deadline)}</div><div>${statusPill(g.status||'new')}</div></div>`).join('')}`:`<div class="empty"><div class="empty-icon">${icon}</div><div class="empty-title">No ${label.toLowerCase()} loaded</div><div class="empty-body">Run the grant discovery agent to pull opportunities.<br><br><a href="${GH_ACTIONS}" target="_blank" style="color:var(--green);text-decoration:none">▶ Trigger GitHub Action →</a></div></div>`}`;
+    ${grants.length?`<div style="display:grid;grid-template-columns:minmax(0,1fr) 70px 90px 90px 70px;gap:8px;padding:6px 14px;margin-bottom:4px"><span style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em">Grant</span><span style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em">Score</span><span style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em">Amount</span><span style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em">Deadline</span><span style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em">Status</span></div>${grants.map(g=>`<div class="grant-row ${urgencyClass(g.deadline)}" onclick="openGrantDetail('${g.grant_id}')"><div><div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span style="font-size:12px;font-weight:600">${(g.title||'Untitled').slice(0,54)}${(g.title||'').length>54?'…':''}</span>${sdvosbBadge(g)}</div><div style="font-size:10px;color:var(--t3);margin-top:2px">${g.funder||'—'}</div></div><div style="font-size:16px;font-weight:800;color:${sc(g.score||0)}">${g.score||'—'}</div><div style="font-size:12px;font-weight:600">${fmt(g.amount_max)}</div><div style="font-size:11px">${fmtDate(g.deadline)}</div><div>${statusPill(g.status||'new')}</div></div>`).join('')}`:`<div class="empty"><div class="empty-icon">${icon}</div><div class="empty-title">No ${label.toLowerCase()} loaded</div><div class="empty-body">Run the grant discovery agent to pull opportunities.<br><br><a href="${GH_ACTIONS}" target="_blank" style="color:var(--green);text-decoration:none">▶ Trigger GitHub Action →</a></div></div>`}`;
 }
 
 // ── APPLICATIONS ──────────────────────────────────────────────────────────
@@ -355,8 +475,19 @@ function renderPerformance(){
   const totalWon=GRANTS.filter(g=>g.status==='won').reduce((a,g)=>a+(g.amount_max||0),0);
   const srcStats=['federal','edtech','state','foundation'].map(src=>{const sg=GRANTS.filter(g=>g.source===src);return {src,count:sg.length,applied:sg.filter(g=>g.status==='applied').length,won:sg.filter(g=>g.status==='won').length,avgScore:sg.length?Math.round(sg.reduce((a,g)=>a+(g.score||0),0)/sg.length):0};});
   el.innerHTML=`
-    <div style="margin-bottom:18px"><div style="font-size:20px;font-weight:800">📈 Performance</div><div style="font-size:11px;color:var(--t3);margin-top:2px">Grant pipeline metrics · Noble Erne, LLC</div></div>
+    <div style="margin-bottom:18px"><div style="font-size:20px;font-weight:800">📈 Performance</div><div style="font-size:11px;color:var(--t3);margin-top:2px">Grant pipeline metrics · Noble Erne, LLC &amp; Walker Contractors LLC</div></div>
     <div class="kpi-row"><div class="kpi"><div class="kpi-val">${total}</div><div class="kpi-lbl">Total Grants Found</div></div><div class="kpi"><div class="kpi-val" style="color:var(--gold)">${applied}</div><div class="kpi-lbl">Applications Submitted</div></div><div class="kpi"><div class="kpi-val" style="color:var(--green)">${won}</div><div class="kpi-lbl">Grants Won</div></div><div class="kpi"><div class="kpi-val" style="color:var(--cyan)">${winRate}%</div><div class="kpi-lbl">Win Rate</div></div><div class="kpi"><div class="kpi-val">${avgScore}</div><div class="kpi-lbl">Avg AI Score</div></div><div class="kpi"><div class="kpi-val" style="color:var(--violet)">${fmt(totalWon)}</div><div class="kpi-lbl">Total Funded</div></div></div>
+    <div class="card-section" style="margin-top:18px">
+      <div class="card-title">🏢 Pipeline by Entity</div>
+      ${(()=>{
+        const ne=GRANTS.filter(g=>{const ef=(g.entity_fit||g.notes||'').toLowerCase();return !ef.includes('walker')||ef.includes('both');});
+        const wk=GRANTS.filter(g=>{const ef=(g.entity_fit||g.notes||'').toLowerCase();return ef.includes('walker')||ef.includes('sdvosb')||ef.includes('veteran');});
+        const neVal=ne.reduce((a,g)=>a+(g.amount_max||0),0);
+        const wkVal=wk.reduce((a,g)=>a+(g.amount_max||0),0);
+        const makeRow=(label,color,grants,pipelineVal)=>`<div style="margin-bottom:14px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><span style="font-size:12px;font-weight:700;color:${color}">${label}</span><span style="font-size:11px;color:var(--t2)">${grants.length} grants · ${fmt(pipelineVal)} pipeline</span></div><div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;background:var(--bg3);border-radius:6px;padding:8px 12px;border:1px solid var(--bd)">${['new','scored','applied','won'].map(st=>`<div style="text-align:center"><div style="font-size:15px;font-weight:800;color:${st==='won'?'var(--green)':st==='applied'?'var(--gold)':st==='scored'?color:'var(--t2)'}">${grants.filter(g=>g.status===st).length}</div><div style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.07em">${st}</div></div>`).join('')}</div></div>`;
+        return makeRow('💼 Noble Erne, LLC','var(--cyan)',ne,neVal)+makeRow('🏗️ Walker Contractors LLC (SDVOSB)','var(--green)',wk,wkVal);
+      })()}
+    </div>
     <div class="card-section"><div class="card-title">Performance by Source</div>${srcStats.map(s=>`<div style="display:flex;align-items:center;gap:16px;padding:10px 0;border-bottom:1px solid var(--bd)"><div style="color:${srcColor(s.src)};font-size:12px;font-weight:700;width:130px">${srcLabel(s.src)}</div><div style="flex:1"><div style="display:flex;justify-content:space-between;font-size:10px;color:var(--t2);margin-bottom:3px"><span>${s.count} found · ${s.applied} applied · ${s.won} won</span><span style="font-weight:700;color:${sc(s.avgScore)}">Avg ${s.avgScore}</span></div><div class="bar"><div class="bar-fill" style="width:${total?Math.round(s.count/total*100):0}%;background:${srcColor(s.src)}"></div></div></div></div>`).join('')}</div>
     <div class="card-section" style="margin-top:14px"><div class="card-title">Score Distribution</div>${[[80,100,'🔥 Strong Match (80–100)','var(--green)'],[65,79,'✅ Good Match (65–79)','var(--gold)'],[50,64,'⚠️ Partial Match (50–64)','var(--amber)'],[0,49,'❌ Poor Fit (0–49)','var(--red)']].map(([lo,hi,label,color])=>{const count=GRANTS.filter(g=>g.score>=lo&&g.score<=hi).length;const pct=total?Math.round(count/total*100):0;return `<div style="margin-bottom:10px"><div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:4px"><span style="color:${color}">${label}</span><span style="color:var(--t2)">${count} (${pct}%)</span></div><div class="bar"><div class="bar-fill" style="width:${pct}%;background:${color}"></div></div></div>`;}).join('')}</div>`;
 }

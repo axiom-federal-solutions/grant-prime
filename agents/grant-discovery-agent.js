@@ -106,13 +106,14 @@ async function fetchGrantsGovKeywords() {
       for (const opp of opps) {
         results.push({
           source: 'federal',
-          grant_id: `grantsgov-kw-${opp.id}`,
+          grant_id: `grantsgov-${opp.id}`,   // normalized — no search-type prefix to prevent cross-search duplicates
           title: opp.title || 'Untitled',
           funder: opp.agencyName || 'Federal Agency',
           amount_max: opp.awardCeiling ? Number(opp.awardCeiling) : null,
           deadline: opp.closeDate ? safeDate(opp.closeDate) : null,
           description: opp.synopsis || '',
           eligibility: Array.isArray(opp.applicantTypes) ? opp.applicantTypes.join(', ') : '',
+          naics: opp.cfdaNumbers?.[0] || opp.naics || null,
           apply_url: `https://www.grants.gov/search-results-detail/${opp.id}`,
           status: 'new',
         });
@@ -168,13 +169,14 @@ async function fetchGrantsGovAgencies() {
       for (const opp of opps) {
         results.push({
           source: agency.source,
-          grant_id: `grantsgov-agency-${agency.code}-${opp.id}`,
+          grant_id: `grantsgov-${opp.id}`,   // normalized — dedupes with keyword + category results
           title: opp.title || 'Untitled',
           funder: agency.name,
           amount_max: opp.awardCeiling ? Number(opp.awardCeiling) : null,
           deadline: opp.closeDate ? safeDate(opp.closeDate) : null,
           description: opp.synopsis || '',
           eligibility: Array.isArray(opp.applicantTypes) ? opp.applicantTypes.join(', ') : '',
+          naics: opp.cfdaNumbers?.[0] || opp.naics || null,
           apply_url: `https://www.grants.gov/search-results-detail/${opp.id}`,
           status: 'new',
         });
@@ -221,13 +223,14 @@ async function fetchGrantsGovCategories() {
       for (const opp of opps) {
         results.push({
           source: 'state',
-          grant_id: `grantsgov-cat-${cat.code}-${opp.id}`,
+          grant_id: `grantsgov-${opp.id}`,   // normalized — dedupes with keyword + agency results
           title: opp.title || 'Untitled',
           funder: opp.agencyName || `${cat.label} Program`,
           amount_max: opp.awardCeiling ? Number(opp.awardCeiling) : null,
           deadline: opp.closeDate ? safeDate(opp.closeDate) : null,
           description: opp.synopsis || '',
           eligibility: Array.isArray(opp.applicantTypes) ? opp.applicantTypes.join(', ') : '',
+          naics: opp.cfdaNumbers?.[0] || opp.naics || null,
           apply_url: `https://www.grants.gov/search-results-detail/${opp.id}`,
           status: 'new',
         });
@@ -317,6 +320,12 @@ async function fetchFoundationRSS() {
         // PND RFPs always qualify — others need keyword match
         const safeId = Buffer.from(String(guid).slice(0, 60)).toString('base64').replace(/[^a-zA-Z0-9]/g,'').slice(0, 30);
 
+        // Try to extract a real deadline from description text first.
+        // Fall back to pubDate + 90 days only if no date found.
+        const cleanDesc = cleanHTML(description);
+        const realDeadline = extractDeadlineFromText(cleanDesc) || extractDeadlineFromText(cleanHTML(title));
+        const deadline = realDeadline || (pubDate ? estimateDeadline(pubDate) : null);
+
         results.push({
           source: feed.source,
           grant_id: `rss-${safeId || Math.random().toString(36).slice(2)}`,
@@ -324,10 +333,10 @@ async function fetchFoundationRSS() {
           funder: feed.name,
           amount_min: null,
           amount_max: null,
-          // RSS pubDate is post date — not deadline. Add 90 days as estimated window.
-          deadline: pubDate ? estimateDeadline(pubDate) : null,
-          description: cleanHTML(description).slice(0, 800),
+          deadline,
+          description: cleanDesc.slice(0, 800),
           eligibility: 'See funder website for full eligibility requirements',
+          naics: null,
           apply_url: link || feed.url,
           status: 'new',
         });
@@ -370,7 +379,42 @@ function cleanHTML(str) {
     .trim();
 }
 
-// Parse an RSS pubDate and add 90 days to estimate the application deadline
+// Extract real deadline from RSS description text before falling back to estimate.
+// Looks for patterns like "deadline: June 30", "due by 2026-08-15", "applications due March 1"
+function extractDeadlineFromText(text) {
+  if (!text) return null;
+  const clean = cleanHTML(text);
+
+  // Pattern: month name + day (+ optional year)
+  const monthNames = 'January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec';
+  const patterns = [
+    // "deadline: June 30, 2026" or "due: March 15"
+    new RegExp(`(?:deadline|due|closes?|submit by|applications? due|proposals? due)[:\\s]+(?:is\\s+)?(?:on\\s+)?(${monthNames})\\s+(\\d{1,2})(?:,?\\s+(\\d{4}))?`, 'i'),
+    // "June 30, 2026" standalone near deadline context
+    new RegExp(`(${monthNames})\\s+(\\d{1,2}),?\\s+(\\d{4})`, 'i'),
+    // ISO format: "2026-08-15"
+    /\b(202\d-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01]))\b/,
+  ];
+
+  for (const pattern of patterns) {
+    const match = clean.match(pattern);
+    if (match) {
+      try {
+        // ISO pattern returns directly
+        if (/^\d{4}-\d{2}-\d{2}$/.test(match[1])) return match[1];
+        // Month name pattern — reconstruct date string
+        const year = match[3] || new Date().getFullYear() + 1;
+        const d = new Date(`${match[1]} ${match[2]}, ${year}`);
+        if (!isNaN(d.getTime()) && d > new Date()) {
+          return d.toISOString().split('T')[0];
+        }
+      } catch { /* fall through */ }
+    }
+  }
+  return null;
+}
+
+// Parse an RSS pubDate and add 90 days as a fallback deadline estimate
 function estimateDeadline(dateStr) {
   try {
     const d = new Date(dateStr);

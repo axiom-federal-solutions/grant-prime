@@ -31,23 +31,42 @@ const anthropic = new Anthropic({
 });
 
 // ── Company Profiles ─────────────────────────────────────────
-// Two affiliated entities — score grants for EITHER or BOTH.
-// Walker Contractors is SDVOSB-certified — eligible for veteran
-// set-asides, VA contracts, and DOD small business programs.
+// Two affiliated entities under Noble Erne, LLC / Axiom Federal Solutions.
+// Walker Contractors LLC is SDVOSB-certified — eligible for veteran
+// set-asides, VA contracts, DOD small business programs, and SBA set-asides.
+//
+// NAICS codes sourced from IQE PRIME config/settings.json and scout-state.js
 const COMPANY_PROFILES = `
 ENTITY 1 — Noble Erne, LLC
-- IT consulting firm: SAP implementation & upgrades (primary), Instructional Design, Software Administration, Training Program Management
-- Industries: Technology, Oil & Gas, Retail, Government/Military, Finance & Banking, Manufacturing & Industrial, EdTech
-- Entity type: LLC, small business, can prime or sub
-- Best fit: workforce development, IT training grants, SAP/ERP technology programs, EdTech, capacity building
+Type: IT consulting firm, LLC, small business, can prime or sub
+Primary capabilities: SAP implementation & upgrades, Instructional Design, Software Administration, Training Program Management, eLearning (SCORM/xAPI), LMS administration
+Industries: Technology, Oil & Gas, Retail, Government/Military, Finance & Banking, Manufacturing & Industrial, EdTech, Workforce Development
+NAICS codes (Noble Erne):
+  541511 — Custom Computer Programming Services
+  541512 — Computer Systems Design Services
+  541519 — Other Computer Related Services (SAP/ERP admin)
+  541611 — Administrative Management and General Management Consulting
+  541618 — Other Management Consulting Services
+  611430 — Professional and Management Development Training
+Best fit: workforce development grants, IT training funding, SAP/ERP technology programs, EdTech initiatives, capacity building, employee training programs, instructional design contracts
 
-ENTITY 2 — Walker Contractors LLC
-- Construction, renovation, and facilities services firm
-- SDVOSB certified (Service-Disabled Veteran-Owned Small Business)
-- VOSB eligible (Veteran-Owned Small Business programs)
-- Industries: federal construction, infrastructure, facilities maintenance, government renovation projects
-- Entity type: SDVOSB/VOSB small business — qualifies for veteran set-aside contracts and grants
-- Best fit: VA construction/renovation grants, DOD facilities programs, veteran entrepreneurship funding, HUBZone-eligible programs, SBA SDVOSB set-asides, infrastructure grants, federal construction opportunities
+ENTITY 2 — Walker Contractors LLC (DBA: Axiom Federal Solutions)
+Type: Construction/renovation/facilities firm, SDVOSB certified, VOSB eligible, small business
+Certifications: SDVOSB (Service-Disabled Veteran-Owned Small Business), VOSB (Veteran-Owned Small Business)
+Industries: federal construction, commercial renovation, infrastructure, facilities maintenance, janitorial/supply, government renovation
+Geography: HQ Dallas TX — targets TX, OK, LA, AR, NM, CO, KS, MO
+NAICS codes (Walker Contractors):
+  236220 — Commercial and Institutional Building Construction (PRIMARY)
+  238210 — Electrical Contractors and Other Wiring Installation
+  237990 — Other Heavy and Civil Engineering Construction
+  236116 — New Multifamily Housing Construction
+  561730 — Landscaping Services / Grounds Maintenance
+  424710 — Petroleum and Petroleum Products Merchant Wholesalers (Fuel supply)
+  424130 — Industrial Paper / Janitorial Supply Merchant Wholesalers
+  424490 — Other Grocery and Related Products (PPE supply)
+  424120 — Stationery and Office Supplies Merchant Wholesalers
+  424410 — General Line Grocery Merchant Wholesalers (Food/Beverage supply)
+Best fit: VA construction/renovation grants, DOD facilities programs, veteran entrepreneurship funding, SBA SDVOSB set-asides, federal construction, infrastructure grants, HUBZone programs, supply chain grants
 `;
 
 // ── Helpers ──────────────────────────────────────────────────
@@ -68,29 +87,37 @@ Grant ${i + 1}:
   ID: ${g.id}
   Title: ${g.title}
   Funder: ${g.funder || 'Unknown'}
+  Source Category: ${g.source || 'unknown'}
+  NAICS Code: ${g.naics || 'not listed'}
   Description: ${(g.description || '').slice(0, 400)}
   Eligibility: ${(g.eligibility || '').slice(0, 200)}
 `).join('\n---\n');
 
-  const prompt = `You are scoring grant opportunities for two affiliated companies.
+  const prompt = `You are scoring grant opportunities for two affiliated companies. Score each grant for BOTH entities and return the HIGHEST score.
 
 Company Profiles:
 ${COMPANY_PROFILES}
 
-Scoring guide:
-- 80–100: Strong match (relevant industry + eligible entity type + right scope of work)
-- 50–79: Partial match (some overlap with capabilities or industries)
-- 0–49: Poor fit (wrong industry, wrong entity type, or clearly ineligible)
+NAICS MATCHING RULES (apply these first before reading description):
+- If the grant lists a NAICS code matching Noble Erne's codes (541511, 541512, 541519, 541611, 541618, 611430) → Noble Erne scores 85+
+- If the grant lists a NAICS code matching Walker's codes (236220, 238210, 237990, 236116, 561730, 424710, 424130, 424490, 424120, 424410) → Walker scores 85+
+- If no NAICS listed, score based on description keywords and industry fit
 
-For each grant, determine:
-1. The best overall score (use whichever entity is the better fit — take the HIGHER score)
-2. Which entity is the best fit: "Noble Erne", "Walker Contractors", or "Both"
-3. A one-sentence reason explaining the fit and which entity should apply
+SCORING GUIDE:
+- 90–100: Exact NAICS match + entity eligible + right scope
+- 80–89: Strong description fit or NAICS match with minor gaps
+- 50–79: Partial match — some overlap with capabilities
+- 0–49: Poor fit — wrong industry, wrong entity type, or ineligible
 
-IMPORTANT — SDVOSB/veteran flags: If a grant mentions "veteran", "SDVOSB", "VOSB", "service-disabled", "veteran-owned", "veteran set-aside", or "VA" — Walker Contractors is strongly eligible, score 85+ unless clearly ineligible for other reasons.
+AUTOMATIC HIGH SCORES — Walker Contractors:
+- Any grant mentioning: "veteran", "SDVOSB", "VOSB", "service-disabled veteran", "veteran-owned", "veteran set-aside", "veteran contractor", "VA construction", "veteran entrepreneur" → Walker scores 88+
+- Any construction, renovation, facilities, or infrastructure grant → Walker scores 75+
 
-Return a JSON array ONLY — no other text.
-Format: [{"id": "<grant_id>", "score": <0-100>, "entity": "<Noble Erne|Walker Contractors|Both>", "reason": "<one sentence>"}]
+AUTOMATIC HIGH SCORES — Noble Erne:
+- Any grant mentioning: "workforce development", "instructional design", "SAP", "ERP", "IT training", "software training", "eLearning", "EdTech", "technology training", "employee training" → Noble Erne scores 85+
+
+Return a JSON array ONLY — no markdown, no explanation outside the array.
+Format: [{"id": "<grant_uuid>", "score": <0-100>, "entity": "<Noble Erne|Walker Contractors|Both>", "reason": "<one sentence max 120 chars>"}]
 
 Grants to score:
 ${grantList}`;
@@ -122,12 +149,13 @@ async function updateScores(scores) {
   let updated = 0;
 
   for (const item of scores) {
-    // Prepend entity fit to notes so dashboard can display it
+    // Write entity_fit as a dedicated field + keep it in notes for display
     const entityLabel = item.entity ? `[${item.entity}] ` : '';
     const { error } = await supabase
       .from('grants')
       .update({
         score: item.score,
+        entity_fit: item.entity || 'Noble Erne',
         notes: `${entityLabel}${item.reason || ''}`,
         status: 'scored',
       })
@@ -152,10 +180,10 @@ async function main() {
     process.exit(1);
   }
 
-  // Pull all unscored grants
+  // Pull all unscored grants — include naics and source for better scoring
   const { data: grants, error } = await supabase
     .from('grants')
-    .select('id, title, funder, description, eligibility')
+    .select('id, title, funder, description, eligibility, source, naics')
     .eq('status', 'new');
 
   if (error) {
