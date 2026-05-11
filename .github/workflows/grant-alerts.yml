@@ -10,11 +10,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
+
       - uses: actions/setup-node@v3
         with:
           node-version: '18'
-          cache: 'npm'
-      - run: npm ci
+
+      - name: Install dependencies
+        run: npm install
 
       - name: Run alert agent
         run: node agents/grant-alert-agent.js
@@ -25,17 +27,8 @@ jobs:
           SENDGRID_FROM_EMAIL: ${{ secrets.SENDGRID_FROM_EMAIL }}
           ALERT_EMAIL: ${{ secrets.ALERT_EMAIL }}
 
-      - name: Send failure alert email
+      - name: Notify on failure
         if: failure()
-        uses: dawidd6/action-send-mail@v3
-        with:
-          server_address: smtp.sendgrid.net
-          server_port: 587
-          username: apikey
-          password: ${{ secrets.SENDGRID_API_KEY }}
-          to: ${{ secrets.ALERT_EMAIL }}
-          from: ${{ secrets.SENDGRID_FROM_EMAIL }}
-          subject: "🚨 GRANT PRIME: Alert Agent FAILED — ${{ github.run_id }}"
-          body: |
-            The Grant Alert agent failed on ${{ github.run_id }}.
-            Check the logs: https://github.com/axiom-federal-solutions/grant-prime/actions/runs/${{ github.run_id }}
+        run: |
+          echo "Alert agent failed on run ${{ github.run_id }}"
+          echo "Check logs: https://github.com/axiom-federal-solutions/grant-prime/actions/runs/${{ github.run_id }}"

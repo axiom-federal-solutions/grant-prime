@@ -10,19 +10,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
+
       - uses: actions/setup-node@v3
         with:
           node-version: '18'
-          cache: 'npm'
-      - run: npm ci
+
+      - name: Install dependencies
+        run: npm install
 
       - name: Run discovery agent
         run: node agents/grant-discovery-agent.js
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-          GRANTS_GOV_API_KEY: ${{ secrets.GRANTS_GOV_API_KEY }}
-          SAM_GOV_API_KEY: ${{ secrets.SAM_GOV_API_KEY }}
 
       - name: Run scoring agent
         run: node agents/grant-scoring-agent.js
@@ -31,17 +31,8 @@ jobs:
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 
-      - name: Send failure alert email
+      - name: Notify on failure
         if: failure()
-        uses: dawidd6/action-send-mail@v3
-        with:
-          server_address: smtp.sendgrid.net
-          server_port: 587
-          username: apikey
-          password: ${{ secrets.SENDGRID_API_KEY }}
-          to: ${{ secrets.ALERT_EMAIL }}
-          from: ${{ secrets.SENDGRID_FROM_EMAIL }}
-          subject: "🚨 GRANT PRIME: Discovery Agent FAILED — ${{ github.run_id }}"
-          body: |
-            The Grant Discovery agent failed on ${{ github.run_id }}.
-            Check the logs: https://github.com/axiom-federal-solutions/grant-prime/actions/runs/${{ github.run_id }}
+        run: |
+          echo "Discovery agent failed on run ${{ github.run_id }}"
+          echo "Check logs: https://github.com/axiom-federal-solutions/grant-prime/actions/runs/${{ github.run_id }}"
