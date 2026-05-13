@@ -11,7 +11,9 @@
     "scoring":   "node agents/grant-scoring-agent.js",
     "alert":     "node agents/grant-alert-agent.js",
     "deadlines": "node agents/grant-deadline-monitor.js",
-    "proposal":  "node agents/grant-proposal-agent.js"
+    "proposal":  "node agents/grant-proposal-agent.js",
+    "treagent":  "node agents/treagent.js",
+    "daily":     "node agents/grant-discovery-agent.js && node agents/grant-scoring-agent.js && node agents/grant-alert-agent.js && node agents/grant-deadline-monitor.js && node agents/grant-health-monitor.js && node agents/treagent.js"
   },
   "engines": {
     "node": ">=18"
