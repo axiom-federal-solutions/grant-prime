@@ -163,6 +163,9 @@ body{font-family:'Outfit',system-ui,sans-serif;background:var(--bg);color:var(--
   <button class="sb-btn" onclick="go('stem-tab',this)">🔬 STEM<span class="sb-dot" style="background:var(--violet);box-shadow:0 0 6px var(--violet)"></span></button>
   <button class="sb-btn" onclick="go('construction-tab',this)">🏗️ Construction<span class="sb-dot" style="background:var(--green);box-shadow:0 0 6px var(--green)"></span></button>
   <button class="sb-btn" onclick="go('all-grants',this)">📄 All Grants<span class="sb-dot" style="background:var(--t2)"></span></button>
+  <button class="sb-btn" onclick="go('hidden-gems',this)">💎 Hidden Gems<span class="sb-dot" style="background:#a259ff;box-shadow:0 0 6px #a259ff"></span></button>
+  <button class="sb-btn" onclick="go('always-open',this)">♾ Always Open<span class="sb-dot" style="background:var(--green);box-shadow:0 0 6px var(--green)"></span></button>
+  <button class="sb-btn" onclick="go('microgrants',this)">⚡ Microgrants<span class="sb-dot" style="background:var(--gold);box-shadow:0 0 6px var(--gold)"></span></button>
   <div class="sb-group">By Source</div>
   <button class="sb-btn" onclick="go('federal',this)">🏛️ Federal<span class="sb-dot" style="background:var(--cyan);box-shadow:0 0 6px var(--cyan)"></span></button>
   <button class="sb-btn" onclick="go('edtech',this)">📚 EdTech / Workforce<span class="sb-dot" style="background:var(--green);box-shadow:0 0 6px var(--green)"></span></button>
@@ -194,6 +197,9 @@ body{font-family:'Outfit',system-ui,sans-serif;background:var(--bg);color:var(--
   <div id="t-edtech"       class="tab" style="display:none"></div>
   <div id="t-state"        class="tab" style="display:none"></div>
   <div id="t-foundation"   class="tab" style="display:none"></div>
+  <div id="t-hidden-gems"  class="tab" style="display:none"></div>
+  <div id="t-always-open" class="tab" style="display:none"></div>
+  <div id="t-microgrants" class="tab" style="display:none"></div>
   <div id="t-applications" class="tab" style="display:none"></div>
   <div id="t-won"          class="tab" style="display:none"></div>
   <div id="t-deadlines"    class="tab" style="display:none"></div>
@@ -295,6 +301,9 @@ function render(tab){
     'stem-tab':()=>renderEntityTab('stem-tab'),
     'construction-tab':()=>renderEntityTab('construction-tab'),
     'all-grants':()=>renderEntityTab('all-grants'),
+    'hidden-gems':renderHiddenGems,
+    'always-open':renderAlwaysOpen,
+    'microgrants':renderMicrogrants,
     federal:()=>renderGrantList('federal'),edtech:()=>renderGrantList('edtech'),
     state:()=>renderGrantList('state'),foundation:()=>renderGrantList('foundation'),
     applications:renderApplications,won:renderWon,deadlines:renderDeadlines,
@@ -641,8 +650,6 @@ function renderHome(){
 }
 
 // ── ACTION QUEUE ──────────────────────────────────────────────────────────
-let _aqRolling = false;
-function toggleRolling(){ _aqRolling = !_aqRolling; renderAction(); }
 
 // Build one row for the action queue grid
 function _aqRow(g){
@@ -685,14 +692,14 @@ function _aqTier(label, color, grants){
 function renderAction(){
   var el=document.getElementById('t-action');
 
-  // Base urgent pool: scored ≥65, deadline within 14 days, not acted on
+  // Urgent pool: scored ≥65, deadline within 14 days, not acted on
   var basePool=GRANTS.filter(function(g){
     var d=daysLeft(g.deadline);
     return d!==null && d<=14 && (g.score||0)>=65
       && g.status!=='closed' && g.status!=='won' && g.status!=='applied' && g.status!=='rejected';
   });
 
-  // Sort base pool descending by amount_max (nulls last), then by days left
+  // Sort descending by amount_max, then by days left
   basePool.sort(function(a,b){
     var aAmt=a.amount_max||0, bAmt=b.amount_max||0;
     if (bAmt!==aAmt) return bAmt-aAmt;
@@ -711,83 +718,42 @@ function renderAction(){
     else                     tierTBD.push(g);
   });
 
-  // Rolling grants: scored ≥55, no deadline, not acted on — sorted by score desc
-  var rollingGrants=GRANTS.filter(function(g){
-    return (!g.deadline||g.deadline===null)
-      && (g.score||0)>=55
-      && g.status!=='closed' && g.status!=='won' && g.status!=='applied' && g.status!=='rejected';
-  }).sort(function(a,b){
-    var bAmt=b.amount_max||0, aAmt=a.amount_max||0;
-    if (bAmt!==aAmt) return bAmt-aAmt;
-    return (b.score||0)-(a.score||0);
-  }).slice(0,15);
-
-  var _rollingRowsHtml=rollingGrants.map(function(g){
-    return '<div class="grant-row" onclick="openGrantDetail(\''+(g.grant_id||g.id)+'\')">'
-      +'<div><div style="font-size:12px;font-weight:600">'+(g.title||'Untitled').slice(0,58)+'…</div>'
-      +'<div style="font-size:10px;color:var(--t3);margin-top:2px">'+(g.funder||'—')+' · <span style="color:'+srcColor(g.source)+'">'+srcLabel(g.source)+'</span></div></div>'
-      +'<div style="font-size:16px;font-weight:800;color:'+sc(g.score||0)+'">'+(g.score||'—')+'</div>'
-      +'<div style="font-size:12px;font-weight:600">'+(g.amount_max?fmt(g.amount_max):'TBD')+'</div>'
-      +'<div style="font-size:11px;color:var(--green);font-weight:700">Always Open</div>'
-      +'<div style="font-size:11px;font-weight:700;color:var(--green)">♾</div>'
-      +'</div>';
-  }).join('');
-
-  var _rollingBtn='<button onclick="toggleRolling()" style="padding:5px 12px;border-radius:5px;border:1px solid '+(_aqRolling?'var(--greenBd)':'var(--bd)')+';background:'+(_aqRolling?'var(--greenDim)':'var(--bg3)')+';color:'+(_aqRolling?'var(--green)':'var(--t2)')+';font-family:\'Outfit\',sans-serif;font-size:10px;font-weight:600;cursor:pointer;transition:all .15s">♾ Always Open</button>';
-
   var noneScored=GRANTS.filter(function(g){return (g.score||0)>=65;}).length===0;
 
-  // ── Build tiered content ──
   var tieredContent='';
-  if (_aqRolling) {
-    tieredContent='<div style="font-size:10px;font-weight:700;color:var(--green);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px">♾ Always-Open — No deadline, apply anytime</div>'
-      +(rollingGrants.length
-        ? _aqColHdr+_rollingRowsHtml
-        : '<div class="empty"><div class="empty-icon">♾</div><div class="empty-title">No rolling grants yet</div><div class="empty-body">Rolling grants appear here once discovery runs and scoring assigns score ≥55 with no deadline set.</div></div>'
-      );
-  } else if (basePool.length===0) {
+  if (basePool.length===0) {
     tieredContent='<div class="empty"><div class="empty-icon">✅</div>'
       +'<div class="empty-title">Action queue clear</div>'
       +'<div class="empty-body">'
       +(noneScored
         ? 'Grants haven\'t been scored yet. Run: <code style="color:var(--cyan)">npm run scoring</code>'
-        : 'No scored grants closing within 14 days. Click ♾ Always Open to see rolling opportunities.'
+        : 'No scored grants closing within 14 days. Check ♾ Always Open for rolling opportunities.'
       )
       +'</div></div>';
   } else {
     tieredContent=''
-      +_aqTier('$250K +', 'var(--green)',  tier250)
-      +_aqTier('$100K +', 'var(--cyan)',   tier100)
-      +_aqTier('$50K +',  'var(--violet)', tier50)
-      +_aqTier('$10K +',  'var(--amber)',  tier10)
-      +_aqTier('Amount TBD', 'var(--t3)', tierTBD);
+      +_aqTier('$250K +',    'var(--green)',  tier250)
+      +_aqTier('$100K +',    'var(--cyan)',   tier100)
+      +_aqTier('$50K +',     'var(--violet)', tier50)
+      +_aqTier('$10K +',     'var(--amber)',  tier10)
+      +_aqTier('Amount TBD', 'var(--t3)',     tierTBD);
   }
 
-  el.innerHTML='<div style="margin-bottom:12px">'
+  el.innerHTML='<div style="margin-bottom:16px">'
     +'<div style="font-size:20px;font-weight:800">🚨 Action Queue</div>'
     +'<div style="font-size:11px;color:var(--t3);margin-top:2px">Score ≥65 · closing ≤14 days · sorted by award size · '+basePool.length+' total</div>'
-    +'</div>'
-    +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:16px">'
-    +_rollingBtn
     +'</div>'
     +tieredContent;
 }
 
-// ── GRANT LIST BY SOURCE ──────────────────────────────────────────────────
-function renderGrantList(source){
-  var el=document.getElementById('t-'+source);
-  var icon={federal:'🏛️',edtech:'📚',state:'🗺️',foundation:'🏦'}[source]||'📄';
-  var label={federal:'Federal Grants',edtech:'EdTech / Workforce Grants',state:'State & Local Grants',foundation:'Foundation / Private Grants'}[source];
-  var EXCLUDED=['closed','won','applied','rejected'];
-  var all=GRANTS.filter(function(g){return g.source===source;});
-  var grants=all.slice().sort(function(a,b){return (b.score||0)-(a.score||0);});
-
-  // Hidden Gems for this source: score 50–72, not closed/won/applied/rejected
-  var gems=all.filter(function(g){
-    return (g.score||0)>=50&&(g.score||0)<=72&&EXCLUDED.indexOf(g.status||'new')===-1;
+// ── HIDDEN GEMS ───────────────────────────────────────────────────────────
+function renderHiddenGems(){
+  var el=document.getElementById('t-hidden-gems');
+  var EXCL=['closed','won','applied','rejected'];
+  var gems=GRANTS.filter(function(g){
+    return (g.score||0)>=50 && (g.score||0)<=72 && EXCL.indexOf(g.status||'new')===-1;
   }).sort(function(a,b){return (b.score||0)-(a.score||0);});
 
-  // Column header bar
   var colHdr='<div style="display:grid;grid-template-columns:minmax(0,1fr) 70px 90px 90px 70px;gap:8px;padding:6px 14px;margin-bottom:4px">'
     +'<span style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em">Grant</span>'
     +'<span style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em">Score</span>'
@@ -796,7 +762,145 @@ function renderGrantList(source){
     +'<span style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em">Status</span>'
     +'</div>';
 
-  // Render a single grant row
+  function gemRow(g){
+    var id=g.grant_id||g.id;
+    return '<div class="grant-row '+urgencyClass(g.deadline)+'" onclick="openGrantDetail(\''+id+'\')">'
+      +'<div><div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">'
+      +'<span style="font-size:12px;font-weight:600">'+(g.title||'Untitled').slice(0,54)+'…</span>'+sdvosbBadge(g)
+      +'</div><div style="font-size:10px;color:var(--t3);margin-top:2px">'+(g.funder||'—')+' · <span style="color:'+srcColor(g.source)+'">'+srcLabel(g.source)+'</span></div></div>'
+      +'<div style="font-size:16px;font-weight:800;color:'+sc(g.score||0)+'">'+(g.score||'—')+'</div>'
+      +'<div style="font-size:12px;font-weight:600">'+fmt(g.amount_max)+'</div>'
+      +'<div style="font-size:11px">'+fmtDate(g.deadline)+'</div>'
+      +'<div>'+statusPill(g.status||'new')+'</div>'
+      +'</div>';
+  }
+
+  el.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px">'
+    +'<div><div style="font-size:20px;font-weight:800">💎 Hidden Gems</div>'
+    +'<div style="font-size:11px;color:var(--t3);margin-top:2px">Score 50–72 · underrated matches worth investigating · '+gems.length+' found</div></div>'
+    +'<button class="refresh-btn" onclick="loadData()">↻ Refresh</button>'
+    +'</div>'
+    +'<div style="background:linear-gradient(135deg,rgba(162,89,255,.08),rgba(0,198,255,.05));border:1px solid rgba(162,89,255,.25);border-radius:8px;padding:12px 14px;margin-bottom:18px;font-size:11px;color:var(--t2);line-height:1.7">'
+    +'💡 Hidden Gems are grants with AI scores between 50–72 — not perfect fits but worth a closer look. They may have lower competition, flexible eligibility, or apply to a subsidiary entity like Walker Contractors LLC.'
+    +'</div>'
+    +(gems.length?colHdr+gems.map(gemRow).join(''):'<div class="empty"><div class="empty-icon">💎</div><div class="empty-title">No hidden gems yet</div><div class="empty-body">Run discovery + scoring to populate this view.</div></div>');
+}
+
+// ── ALWAYS OPEN ───────────────────────────────────────────────────────────
+function renderAlwaysOpen(){
+  var el=document.getElementById('t-always-open');
+  var EXCL=['closed','won','applied','rejected'];
+  var rolling=GRANTS.filter(function(g){
+    return (!g.deadline||g.deadline===null) && (g.score||0)>=55 && EXCL.indexOf(g.status||'new')===-1;
+  }).sort(function(a,b){
+    var bAmt=b.amount_max||0, aAmt=a.amount_max||0;
+    if (bAmt!==aAmt) return bAmt-aAmt;
+    return (b.score||0)-(a.score||0);
+  });
+
+  var colHdr='<div style="display:grid;grid-template-columns:minmax(0,1fr) 70px 90px 90px 70px;gap:8px;padding:6px 14px;margin-bottom:4px">'
+    +'<span style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em">Grant</span>'
+    +'<span style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em">Score</span>'
+    +'<span style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em">Amount</span>'
+    +'<span style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em">Source</span>'
+    +'<span style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em">Status</span>'
+    +'</div>';
+
+  function rolRow(g){
+    var id=g.grant_id||g.id;
+    return '<div class="grant-row" onclick="openGrantDetail(\''+id+'\')">'
+      +'<div><div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">'
+      +'<span style="font-size:12px;font-weight:600">'+(g.title||'Untitled').slice(0,54)+'…</span>'+sdvosbBadge(g)
+      +'</div><div style="font-size:10px;color:var(--t3);margin-top:2px">'+(g.funder||'—')+'</div></div>'
+      +'<div style="font-size:16px;font-weight:800;color:'+sc(g.score||0)+'">'+(g.score||'—')+'</div>'
+      +'<div style="font-size:12px;font-weight:600">'+fmt(g.amount_max)+'</div>'
+      +'<div style="font-size:11px;color:'+srcColor(g.source)+'">'+srcLabel(g.source)+'</div>'
+      +'<div>'+statusPill(g.status||'new')+'</div>'
+      +'</div>';
+  }
+
+  el.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px">'
+    +'<div><div style="font-size:20px;font-weight:800">♾ Always Open</div>'
+    +'<div style="font-size:11px;color:var(--t3);margin-top:2px">No deadline · open cycle or rolling acceptance · score ≥55 · '+rolling.length+' grants</div></div>'
+    +'<button class="refresh-btn" onclick="loadData()">↻ Refresh</button>'
+    +'</div>'
+    +'<div style="background:var(--greenDim);border:1px solid var(--greenBd);border-radius:8px;padding:12px 14px;margin-bottom:18px;font-size:11px;color:var(--t2);line-height:1.7">'
+    +'♾ These grants have no hard deadline — foundations, open-cycle federal programs, and recurring RFPs. Apply anytime, but track your cadence to maximize funding diversification.'
+    +'</div>'
+    +(rolling.length?colHdr+rolling.map(rolRow).join(''):'<div class="empty"><div class="empty-icon">♾</div><div class="empty-title">No always-open grants yet</div><div class="empty-body">These appear once discovery runs and scoring assigns score ≥55 to grants with no deadline set.</div></div>');
+}
+
+// ── MICROGRANTS ───────────────────────────────────────────────────────────
+function renderMicrogrants(){
+  var el=document.getElementById('t-microgrants');
+  var EXCL=['closed','won','applied','rejected'];
+  var MICRO_KW=/micro.?grant|rapid.?fund|fast.?track|quick.?grant|seed.?fund|emergency.?fund|flash.?grant|express.?grant|small.?award|community.?grant|local.?grant|pilot.?grant/i;
+
+  var micro=GRANTS.filter(function(g){
+    if (EXCL.indexOf(g.status||'new')!==-1) return false;
+    if ((g.score||0)<40) return false;
+    var amt=g.amount_max===null||g.amount_max===undefined?null:Number(g.amount_max);
+    // Include if amount ≤ $25K, or if description/title matches micro keywords and amount is unknown
+    if (amt!==null && amt>0 && amt<=25000) return true;
+    if (amt===null && MICRO_KW.test((g.title||'')+' '+(g.description||''))) return true;
+    return false;
+  }).sort(function(a,b){
+    // Sort: known amounts desc, then score desc
+    var bAmt=b.amount_max||0, aAmt=a.amount_max||0;
+    if (bAmt!==aAmt) return bAmt-aAmt;
+    return (b.score||0)-(a.score||0);
+  });
+
+  var colHdr='<div style="display:grid;grid-template-columns:minmax(0,1fr) 70px 90px 90px 70px;gap:8px;padding:6px 14px;margin-bottom:4px">'
+    +'<span style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em">Grant</span>'
+    +'<span style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em">Score</span>'
+    +'<span style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em">Amount</span>'
+    +'<span style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em">Deadline</span>'
+    +'<span style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em">Status</span>'
+    +'</div>';
+
+  function microRow(g){
+    var id=g.grant_id||g.id;
+    return '<div class="grant-row '+urgencyClass(g.deadline)+'" onclick="openGrantDetail(\''+id+'\')">'
+      +'<div><div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">'
+      +'<span style="font-size:12px;font-weight:600">'+(g.title||'Untitled').slice(0,54)+'…</span>'
+      +'<span style="font-size:8px;font-weight:700;padding:1px 5px;border-radius:3px;background:rgba(233,196,106,.15);color:var(--gold);text-transform:uppercase">⚡ Micro</span>'
+      +'</div><div style="font-size:10px;color:var(--t3);margin-top:2px">'+(g.funder||'—')+' · <span style="color:'+srcColor(g.source)+'">'+srcLabel(g.source)+'</span></div></div>'
+      +'<div style="font-size:16px;font-weight:800;color:'+sc(g.score||0)+'">'+(g.score||'—')+'</div>'
+      +'<div style="font-size:12px;font-weight:600">'+fmt(g.amount_max)+'</div>'
+      +'<div style="font-size:11px">'+fmtDate(g.deadline)+'</div>'
+      +'<div>'+statusPill(g.status||'new')+'</div>'
+      +'</div>';
+  }
+
+  var totalPipeline=micro.reduce(function(a,g){return a+(g.amount_max||0);},0);
+
+  el.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px">'
+    +'<div><div style="font-size:20px;font-weight:800">⚡ Microgrants</div>'
+    +'<div style="font-size:11px;color:var(--t3);margin-top:2px">Award ≤$25K · fast-turnaround · low-competition · '+micro.length+' grants · '+fmt(totalPipeline)+' total pipeline</div></div>'
+    +'<button class="refresh-btn" onclick="loadData()">↻ Refresh</button>'
+    +'</div>'
+    +'<div style="background:rgba(233,196,106,.07);border:1px solid rgba(233,196,106,.22);border-radius:8px;padding:12px 14px;margin-bottom:18px;font-size:11px;color:var(--t2);line-height:1.7">'
+    +'⚡ Microgrants are fast-moving, low-barrier awards — typically ≤$25K with simpler applications, shorter review cycles, and lower competition. Stack multiple microgrants to cover seed costs while pursuing larger awards.'
+    +'</div>'
+    +(micro.length?colHdr+micro.map(microRow).join(''):'<div class="empty"><div class="empty-icon">⚡</div><div class="empty-title">No microgrants found yet</div><div class="empty-body">Microgrants appear here once discovery runs and amounts are enriched. Grants ≤$25K or matching fast-turnaround keywords qualify.</div></div>');
+}
+
+// ── GRANT LIST BY SOURCE ──────────────────────────────────────────────────
+function renderGrantList(source){
+  var el=document.getElementById('t-'+source);
+  var icon={federal:'🏛️',edtech:'📚',state:'🗺️',foundation:'🏦'}[source]||'📄';
+  var label={federal:'Federal Grants',edtech:'EdTech / Workforce Grants',state:'State & Local Grants',foundation:'Foundation / Private Grants'}[source];
+  var grants=GRANTS.filter(function(g){return g.source===source;}).sort(function(a,b){return (b.score||0)-(a.score||0);});
+
+  var colHdr='<div style="display:grid;grid-template-columns:minmax(0,1fr) 70px 90px 90px 70px;gap:8px;padding:6px 14px;margin-bottom:4px">'
+    +'<span style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em">Grant</span>'
+    +'<span style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em">Score</span>'
+    +'<span style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em">Amount</span>'
+    +'<span style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em">Deadline</span>'
+    +'<span style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em">Status</span>'
+    +'</div>';
+
   function srcRow(g){
     var id=g.grant_id||g.id;
     var title=(g.title||'Untitled').slice(0,54)+((g.title||'').length>54?'…':'');
@@ -811,40 +915,18 @@ function renderGrantList(source){
       +'</div>';
   }
 
-  // Hidden Gems block
-  var gemsBlock='';
-  if(gems.length){
-    gemsBlock='<div style="margin-bottom:20px;border:1px solid #a259ff44;border-radius:10px;padding:14px 14px 8px;background:linear-gradient(135deg,#a259ff08,#00c6ff06)">'
-      +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">'
-      +'<span style="font-size:16px">💎</span>'
-      +'<span style="font-size:13px;font-weight:800;color:#a259ff">Hidden Gems</span>'
-      +'<span style="font-size:10px;color:var(--t3);margin-left:4px">Score 50–72 · worth watching · '+gems.length+' found</span>'
-      +'</div>'
-      +colHdr
-      +gems.map(srcRow).join('')
-      +'</div>'
-      +'<div style="border-top:1px solid var(--bd);margin:4px 0 16px"></div>';
-  }
-
-  // Full grant list block
-  var listBlock='';
-  if(grants.length){
-    listBlock=colHdr+grants.map(srcRow).join('');
-  } else {
-    listBlock='<div class="empty"><div class="empty-icon">'+icon+'</div>'
-      +'<div class="empty-title">No '+label.toLowerCase()+' loaded</div>'
-      +'<div class="empty-body">Run the grant discovery agent to pull opportunities.<br><br>'
-      +'<a href="'+GH_ACTIONS+'" target="_blank" style="color:var(--green);text-decoration:none">▶ Trigger GitHub Action →</a>'
-      +'</div></div>';
-  }
-
   el.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px">'
     +'<div><div style="font-size:20px;font-weight:800">'+icon+' '+label+'</div>'
-    +'<div style="font-size:11px;color:var(--t3);margin-top:2px">'+grants.length+' grants · '+gems.length+' hidden gems · sorted by score</div></div>'
+    +'<div style="font-size:11px;color:var(--t3);margin-top:2px">'+grants.length+' grants · sorted by score</div></div>'
     +'<button class="refresh-btn" onclick="loadData()">↻ Refresh</button>'
     +'</div>'
-    +gemsBlock
-    +listBlock;
+    +(grants.length
+      ? colHdr+grants.map(srcRow).join('')
+      : '<div class="empty"><div class="empty-icon">'+icon+'</div>'
+        +'<div class="empty-title">No '+label.toLowerCase()+' loaded</div>'
+        +'<div class="empty-body">Run the grant discovery agent to pull opportunities.<br><br>'
+        +'<a href="'+GH_ACTIONS+'" target="_blank" style="color:var(--green);text-decoration:none">▶ Trigger GitHub Action →</a>'
+        +'</div></div>');
 }
 
 // ── APPLICATIONS ──────────────────────────────────────────────────────────
