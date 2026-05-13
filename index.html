@@ -641,9 +641,14 @@ function renderHome(){
 }
 
 // ── ACTION QUEUE ──────────────────────────────────────────────────────────
-let _aqBudget = 0; // 0 = no filter, else minimum amount_max
+let _aqBudget = 0;    // 0 = no filter, else minimum amount_max
+let _aqRolling = false; // when true, show rolling/no-deadline grants instead of deadline-urgent
 function setAQBudget(v){
   _aqBudget = _aqBudget === v ? 0 : v;
+  renderAction();
+}
+function toggleRolling(){
+  _aqRolling = !_aqRolling;
   renderAction();
 }
 function renderAction(){
@@ -696,6 +701,54 @@ function renderAction(){
   // Count label
   var _baseCount=GRANTS.filter(function(g){var d=daysLeft(g.deadline);return d!==null&&d<=14&&(g.score||0)>=65&&g.status!=='closed'&&g.status!=='won'&&g.status!=='applied';}).length;
 
+  // Rolling grants section — scored grants with no deadline (always open)
+  var rollingGrants=GRANTS.filter(function(g){
+    return (!g.deadline||g.deadline===null)
+      && (g.score||0)>=55
+      && g.status!=='closed' && g.status!=='won' && g.status!=='applied';
+  }).sort(function(a,b){ return (b.score||0)-(a.score||0); }).slice(0,12);
+
+  var _rollingRowsHtml=rollingGrants.map(function(g){
+    return '<div class="grant-row" onclick="openGrantDetail(\''+(g.grant_id||g.id)+'\')">'
+      +'<div><div style="font-size:12px;font-weight:600">'+(g.title||'Untitled').slice(0,56)+'…</div>'
+      +'<div style="font-size:10px;color:var(--t3);margin-top:2px">'+(g.funder||'—')+' · <span style="color:'+srcColor(g.source)+'">'+srcLabel(g.source)+'</span></div></div>'
+      +'<div style="font-size:16px;font-weight:800;color:'+sc(g.score||0)+'">'+g.score+'</div>'
+      +'<div style="font-size:12px;font-weight:600">'+(g.amount_max?fmt(g.amount_max):'TBD')+'</div>'
+      +'<div style="font-size:11px;color:var(--green);font-weight:700">Always Open</div>'
+      +'<div style="font-size:10px;font-weight:700;color:var(--green)">♾</div>'
+      +'</div>';
+  }).join('');
+
+  // Hidden Gems — score 55–72, foundation or state source, low competition
+  var hiddenGems=GRANTS.filter(function(g){
+    var sc2=g.score||0;
+    return sc2>=50 && sc2<=72
+      && (g.source==='foundation'||g.source==='state'||g.source==='edtech')
+      && g.status!=='closed' && g.status!=='won' && g.status!=='applied';
+  }).sort(function(a,b){ return (b.score||0)-(a.score||0); }).slice(0,8);
+
+  var _gemsRowsHtml=hiddenGems.map(function(g){
+    var d=daysLeft(g.deadline);
+    var dlText=d===null?'Rolling':(d+'d left');
+    var dlColor=d===null?'var(--green)':(d<=7?'var(--red)':'var(--amber)');
+    return '<div class="grant-row" onclick="openGrantDetail(\''+(g.grant_id||g.id)+'\')">'
+      +'<div><div style="display:flex;align-items:center;gap:5px">'
+      +'<span style="font-size:8px;font-weight:800;color:var(--amber);background:var(--amberDim);border:1px solid rgba(245,158,11,.35);border-radius:3px;padding:1px 5px;letter-spacing:.06em">💎 HIDDEN GEM</span>'
+      +'</div>'
+      +'<div style="font-size:12px;font-weight:600;margin-top:3px">'+(g.title||'Untitled').slice(0,54)+'…</div>'
+      +'<div style="font-size:10px;color:var(--t3);margin-top:2px">'+(g.funder||'—')+' · <span style="color:'+srcColor(g.source)+'">'+srcLabel(g.source)+'</span> · Low competition</div>'
+      +'</div>'
+      +'<div style="font-size:16px;font-weight:800;color:'+sc(g.score||0)+'">'+g.score+'</div>'
+      +'<div style="font-size:12px;font-weight:600">'+(g.amount_max?fmt(g.amount_max):'TBD')+'</div>'
+      +'<div style="font-size:11px;font-weight:700;color:'+dlColor+'">'+dlText+'</div>'
+      +'<div>&nbsp;</div>'
+      +'</div>';
+  }).join('');
+
+  // Rolling tab toggle button
+  var _rollingBtn='<button onclick="toggleRolling()" style="padding:5px 12px;border-radius:5px;border:1px solid '+(_aqRolling?'var(--greenBd)':'var(--bd)')+';background:'+(_aqRolling?'var(--greenDim)':'var(--bg3)')+';color:'+(_aqRolling?'var(--green)':'var(--t2)')+';font-family:\'Outfit\',sans-serif;font-size:10px;font-weight:600;cursor:pointer;transition:all .15s">♾ Always Open</button>';
+
+  // Main render
   el.innerHTML='<div style="margin-bottom:12px">'
     +'<div style="font-size:20px;font-weight:800">🚨 Action Queue</div>'
     +'<div style="font-size:11px;color:var(--t3);margin-top:2px">Score ≥65 · closing ≤14 days · not yet applied · '+_baseCount+' total</div>'
@@ -703,25 +756,63 @@ function renderAction(){
     +'<div style="display:flex;align-items:center;gap:6px;margin-bottom:14px;flex-wrap:wrap">'
     +'<span style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em;font-weight:700;margin-right:2px">AWARD:</span>'
     +_budgetBtns
+    +'<div style="width:1px;height:18px;background:var(--bd);margin:0 4px"></div>'
+    +_rollingBtn
     +'</div>'
-    +(urgent.length
-      ? '<div style="display:grid;grid-template-columns:minmax(0,1fr) 70px 90px 80px 70px;gap:8px;padding:6px 14px;margin-bottom:4px">'
+    +(_aqRolling
+      // ── Rolling view ──
+      ? '<div style="font-size:10px;font-weight:700;color:var(--green);text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px">♾ Always-Open Opportunities — apply anytime, no deadline pressure</div>'
+        +(rollingGrants.length
+          ? '<div style="display:grid;grid-template-columns:minmax(0,1fr) 70px 90px 90px 70px;gap:8px;padding:6px 14px;margin-bottom:4px">'
+            +'<span style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em">Grant</span>'
+            +'<span style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em">Score</span>'
+            +'<span style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em">Award</span>'
+            +'<span style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em">Deadline</span>'
+            +'<span style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em">&nbsp;</span>'
+            +'</div>'+_rollingRowsHtml
+          : '<div class="empty"><div class="empty-icon">♾</div>'
+            +'<div class="empty-title">No rolling grants found</div>'
+            +'<div class="empty-body">Rolling grants appear here once discovery runs and scoring assigns them a score ≥55 with no deadline set.</div>'
+            +'</div>'
+        )
+      // ── Deadline-urgent view ──
+      : (urgent.length
+          ? '<div style="display:grid;grid-template-columns:minmax(0,1fr) 70px 90px 80px 70px;gap:8px;padding:6px 14px;margin-bottom:4px">'
+            +'<span style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em">Grant</span>'
+            +'<span style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em">Score</span>'
+            +'<span style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em">Amount</span>'
+            +'<span style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em">Deadline</span>'
+            +'<span style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em">Days</span>'
+            +'</div>'+_urgentRowsHtml
+          : '<div class="empty"><div class="empty-icon">✅</div>'
+            +'<div class="empty-title">Action queue clear'+(urgent.length===0&&_aqBudget>0?' at this award size':'')+'</div>'
+            +'<div class="empty-body">'
+            +(_aqBudget>0
+              ? 'No scored grants with confirmed award ≥'+fmt(_aqBudget)+' closing in 14 days. <button onclick="setAQBudget(0)" style="background:none;border:none;color:var(--green);cursor:pointer;font-family:inherit;font-size:11px;text-decoration:underline;padding:0">Show all amounts</button>'
+              : (_baseCount===0 && GRANTS.filter(g=>g.score>=65).length===0
+                ? 'Grants haven\'t been scored yet. Run: <code style="color:var(--cyan)">npm run scoring</code>'
+                : 'No urgent deadlines right now. Click ♾ Always Open above to see rolling opportunities.')
+            )
+            +'</div></div>'
+        )
+    )
+    // ── Hidden Gems section — always shown below both views ──
+    +(hiddenGems.length
+      ? '<div style="margin-top:22px;padding-top:18px;border-top:1px solid var(--bd)">'
+        +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">'
+        +'<div style="font-size:14px;font-weight:800">💎 Hidden Gems</div>'
+        +'<span style="font-size:9px;font-weight:700;color:var(--amber);background:var(--amberDim);border-radius:3px;padding:2px 7px;border:1px solid rgba(245,158,11,.35);letter-spacing:.06em">LOW COMPETITION</span>'
+        +'</div>'
+        +'<div style="font-size:11px;color:var(--t3);margin-bottom:10px">Score 50–72 · foundation &amp; state sources · fewer applicants = higher win rate</div>'
+        +'<div style="display:grid;grid-template-columns:minmax(0,1fr) 70px 90px 80px 70px;gap:8px;padding:6px 14px;margin-bottom:4px">'
         +'<span style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em">Grant</span>'
         +'<span style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em">Score</span>'
-        +'<span style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em">Amount</span>'
+        +'<span style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em">Award</span>'
         +'<span style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em">Deadline</span>'
-        +'<span style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em">Days</span>'
-        +'</div>'+_urgentRowsHtml
-      : '<div class="empty"><div class="empty-icon">✅</div>'
-        +'<div class="empty-title">Action queue clear'+(urgent.length===0&&_aqBudget>0?' at this award size':'')+'</div>'
-        +'<div class="empty-body">'
-        +(_aqBudget>0
-          ? 'No scored grants with confirmed award ≥'+fmt(_aqBudget)+' closing in 14 days. <button onclick="setAQBudget(0)" style="background:none;border:none;color:var(--green);cursor:pointer;font-family:inherit;font-size:11px;text-decoration:underline;padding:0">Show all amounts</button>'
-          : (_baseCount===0 && GRANTS.filter(g=>g.score>=65).length===0
-            ? 'Grants haven\'t been scored yet. Run: <code style="color:var(--cyan)">npm run scoring</code>'
-            : 'No urgent deadlines right now. Check back tomorrow or view All Grants.')
-        )
-        +'</div></div>'
+        +'<span style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em">&nbsp;</span>'
+        +'</div>'+_gemsRowsHtml
+        +'</div>'
+      : ''
     );
 }
 

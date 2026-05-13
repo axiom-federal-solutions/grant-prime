@@ -611,6 +611,219 @@ async function fetchNIH() {
   return results;
 }
 
+// ── Source 7: ProPublica Nonprofit Explorer — Foundation Intel ──
+// Free API. No key. Returns IRS 990 data for 2M+ nonprofits.
+// We use it to find active foundations that fund in Noble Erne's verticals.
+// Converts foundation org data → grant intelligence leads.
+// NTEE codes targeted: B=Education, S=Community, T=Philanthropy, Q=International
+async function fetchProPublicaFoundations() {
+  log('Fetching ProPublica foundation intelligence...');
+  const results = [];
+
+  const queries = [
+    { q: 'workforce development training',    ntee: 'B' },
+    { q: 'technology education STEM',         ntee: 'B' },
+    { q: 'small business economic development', ntee: 'S' },
+    { q: 'veteran employment workforce',      ntee: 'Q' },
+    { q: 'instructional design training fund', ntee: 'T' },
+  ];
+
+  for (const query of queries) {
+    try {
+      const url = `https://projects.propublica.org/nonprofits/api/v2/search.json?q=${encodeURIComponent(query.q)}&ntee[]=${query.ntee}&state[]=TX&state[]=VA&state[]=FL&state[]=LA`;
+      const res = await fetchWithRetry(url, {
+        headers: { 'Accept': 'application/json', 'User-Agent': 'GrantPrimeBot/1.0 (Noble Erne LLC research)' },
+      });
+      const json = await res.json();
+      const orgs = json?.organizations || [];
+
+      for (const org of orgs.slice(0, 8)) {
+        // Only include foundations with meaningful revenue (grantmakers, not tiny locals)
+        const revenue = org.revenue_amount || 0;
+        if (revenue < 50000) continue;
+
+        const safeId = String(org.ein || org.id || Math.random()).replace(/\W/g, '');
+        results.push({
+          source: 'foundation',
+          grant_id: `propublica-${safeId.slice(0, 30)}`,
+          title: `Funding Lead: ${(org.name || 'Foundation').slice(0, 150)}`,
+          funder: org.name || 'Private Foundation',
+          amount_min: null,
+          amount_max: null,      // IRS 990 doesn't publish per-grant amounts
+          deadline: null,        // rolling — foundations have no fixed cycle in 990s
+          description: `Foundation funder identified via IRS 990. Revenue: $${Number(revenue).toLocaleString()}. City: ${org.city || 'N/A'}, ${org.state || ''}. NTEE: ${org.ntee_code || query.ntee}. Search for their current grant programs at their website. EIN: ${org.ein || 'N/A'}`,
+          eligibility: 'Contact foundation directly. Small businesses, nonprofits, and training providers may qualify depending on program.',
+          naics: null,
+          apply_url: `https://projects.propublica.org/nonprofits/organizations/${org.ein || ''}`,
+          status: 'new',
+        });
+      }
+      log(`  ProPublica "${query.q}": ${Math.min(orgs.length, 8)} foundation leads`);
+      await sleep(1200);
+    } catch (err) {
+      log(`  ProPublica error for "${query.q}": ${err.message}`);
+    }
+  }
+  return results;
+}
+
+// ── Source 8: USASpending.gov — Historical Award Intelligence ──
+// Free API. No key. Shows what federal agencies ACTUALLY funded historically.
+// Use to find: (a) agencies paying for IT training, (b) award amounts by keyword,
+// (c) which organizations won — so we can position similarly.
+async function fetchUSASpendingIntel() {
+  log('Fetching USASpending.gov award intelligence...');
+  const results = [];
+
+  const searches = [
+    { keyword: 'workforce training technology',   label: 'Workforce Training IT' },
+    { keyword: 'instructional design curriculum', label: 'Instructional Design' },
+    { keyword: 'SAP implementation training',     label: 'SAP Training' },
+    { keyword: 'cybersecurity workforce',         label: 'Cybersecurity Workforce' },
+    { keyword: 'SDVOSB construction renovation',  label: 'SDVOSB Construction' },
+  ];
+
+  for (const search of searches) {
+    try {
+      const res = await fetchWithRetry('https://api.usaspending.gov/api/v2/search/spending_by_award/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          filters: {
+            keywords: [search.keyword],
+            award_type_codes: ['02', '03', '04', '05'],  // grants + cooperative agreements
+            time_period: [{ start_date: '2023-01-01', end_date: new Date().toISOString().split('T')[0] }],
+          },
+          fields: ['Award ID','Recipient Name','Award Amount','Award Type','Awarding Agency','Description','Period of Performance Start Date','Period of Performance Current End Date'],
+          sort: 'Award Amount',
+          order: 'desc',
+          limit: 5,
+          page: 1,
+        }),
+      });
+      const json = await res.json();
+      const awards = json?.results || [];
+
+      for (const award of awards) {
+        const amount = award['Award Amount'] || 0;
+        if (amount < 10000) continue;
+
+        const awardId = (award['Award ID'] || Math.random().toString(36).slice(2)).replace(/\W/g, '-').slice(0, 30);
+        results.push({
+          source: 'federal',
+          grant_id: `usaspending-${awardId}`,
+          title: `Intel: ${award['Awarding Agency'] || 'Federal Agency'} funded ${search.label} ($${Number(amount).toLocaleString()})`,
+          funder: award['Awarding Agency'] || 'Federal Agency',
+          amount_min: Math.round(amount * 0.7),
+          amount_max: Math.round(amount * 1.3),
+          deadline: null,  // historical — no current deadline
+          description: `HISTORICAL AWARD INTELLIGENCE: ${award['Awarding Agency']} awarded $${Number(amount).toLocaleString()} to ${award['Recipient Name'] || 'a recipient'} for ${search.label}. Description: ${(award['Description'] || '').slice(0, 400)}. Use this to identify the agency's interest and apply to similar future solicitations on Grants.gov or SAM.gov.`,
+          eligibility: 'See USASpending award details — apply to future solicitations from this agency',
+          naics: null,
+          apply_url: `https://www.usaspending.gov/award/${award['Award ID'] || ''}`,
+          status: 'new',
+        });
+      }
+      log(`  USASpending "${search.keyword}": ${awards.length} historical awards found`);
+      await sleep(1500);
+    } catch (err) {
+      log(`  USASpending error for "${search.keyword}": ${err.message}`);
+    }
+  }
+  return results;
+}
+
+// ── Source 9: State Economic Development — Key States ───────────
+// Targets the 5 states where Noble Erne and Walker Contractors operate.
+// Uses state agency RSS feeds and public grant portals.
+async function fetchStateGrants() {
+  log('Fetching state economic development grants...');
+  const results = [];
+
+  // State feeds — all free, no key required
+  const stateFeeds = [
+    {
+      name: 'Texas Economic Development (TxEDC)',
+      url: 'https://gov.texas.gov/rss/latest-news',
+      state: 'TX',
+      source: 'state',
+    },
+    {
+      name: 'Louisiana Economic Development',
+      url: 'https://www.opportunitylouisiana.gov/news/feed',
+      state: 'LA',
+      source: 'state',
+    },
+    {
+      name: 'Virginia Economic Development Partnership',
+      url: 'https://www.vedp.org/news/feed',
+      state: 'VA',
+      source: 'state',
+    },
+    {
+      name: 'SBA Weekly Roundup (All States)',
+      url: 'https://www.sba.gov/blogs/rss.xml',
+      state: 'US',
+      source: 'federal',
+    },
+  ];
+
+  for (const feed of stateFeeds) {
+    try {
+      const res = await fetchWithRetry(feed.url, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (compatible; GrantPrimeBot/1.0)',
+          'Accept': 'application/rss+xml, application/xml, text/xml, */*',
+        },
+      });
+      const xml = await res.text();
+      const items = [...xml.matchAll(/<item[^>]*>([\s\S]*?)<\/item>/gi)];
+
+      let count = 0;
+      for (const item of items.slice(0, 10)) {
+        const content = item[1];
+        const title = extractRSSTag(content, 'title');
+        const link = extractRSSTag(content, 'link');
+        const description = extractRSSTag(content, 'description');
+        const pubDate = extractRSSTag(content, 'pubDate');
+        const guid = extractRSSTag(content, 'guid') || link || title;
+
+        if (!title) continue;
+
+        // Only keep grant/funding related items
+        const isGrantRelated = /grant|fund|award|incentive|program|workforce|training|small business|veteran|contract/i
+          .test(title + ' ' + description);
+        if (!isGrantRelated) continue;
+
+        const safeId = Buffer.from(String(guid).slice(0, 60)).toString('base64').replace(/[^a-zA-Z0-9]/g, '').slice(0, 25);
+        const cleanDesc = cleanHTML(description);
+        const realDeadline = extractDeadlineFromText(cleanDesc);
+
+        results.push({
+          source: feed.source,
+          grant_id: `state-${feed.state.toLowerCase()}-${safeId || Math.random().toString(36).slice(2)}`,
+          title: `[${feed.state}] ${cleanHTML(title).slice(0, 180)}`,
+          funder: feed.name,
+          amount_min: null,
+          amount_max: null,
+          deadline: realDeadline || (pubDate ? estimateDeadline(pubDate) : null),
+          description: cleanDesc.slice(0, 800),
+          eligibility: `${feed.state} businesses may apply. See funder website for full eligibility.`,
+          naics: null,
+          apply_url: link || feed.url,
+          status: 'new',
+        });
+        count++;
+      }
+      log(`  State feed ${feed.name}: ${count} grant items`);
+      await sleep(1500);
+    } catch (err) {
+      log(`  State feed error ${feed.name}: ${err.message}`);
+    }
+  }
+  return results;
+}
+
 // ── Eligibility Pre-Filter ────────────────────────────────────
 // Drop grants explicitly restricted to entity types Noble Erne
 // and Walker Contractors cannot be: state govts, tribal govts,
@@ -699,22 +912,28 @@ async function main() {
   }
 
   // Run all sources concurrently — failures in one don't stop others
-  const [kw, agencies, cats, foundation, sbir, nih] = await Promise.allSettled([
+  const [kw, agencies, cats, foundation, sbir, nih, propublica, usaspending, stateGrants] = await Promise.allSettled([
     fetchGrantsGovKeywords(),
     fetchGrantsGovAgencies(),
     fetchGrantsGovCategories(),
     fetchFoundationRSS(),
     fetchSBIR(),
     fetchNIH(),
+    fetchProPublicaFoundations(),
+    fetchUSASpendingIntel(),
+    fetchStateGrants(),
   ]);
 
   const allGrants = [
-    ...(kw.status         === 'fulfilled' ? kw.value         : []),
-    ...(agencies.status   === 'fulfilled' ? agencies.value   : []),
-    ...(cats.status       === 'fulfilled' ? cats.value       : []),
-    ...(foundation.status === 'fulfilled' ? foundation.value : []),
-    ...(sbir.status       === 'fulfilled' ? sbir.value       : []),
-    ...(nih.status        === 'fulfilled' ? nih.value        : []),
+    ...(kw.status           === 'fulfilled' ? kw.value           : []),
+    ...(agencies.status     === 'fulfilled' ? agencies.value     : []),
+    ...(cats.status         === 'fulfilled' ? cats.value         : []),
+    ...(foundation.status   === 'fulfilled' ? foundation.value   : []),
+    ...(sbir.status         === 'fulfilled' ? sbir.value         : []),
+    ...(nih.status          === 'fulfilled' ? nih.value          : []),
+    ...(propublica.status   === 'fulfilled' ? propublica.value   : []),
+    ...(usaspending.status  === 'fulfilled' ? usaspending.value  : []),
+    ...(stateGrants.status  === 'fulfilled' ? stateGrants.value  : []),
   ];
 
   log(`Total grants found across all sources: ${allGrants.length}`);
@@ -751,12 +970,15 @@ async function main() {
     filtered,
     unique: unique.length,
     sources: {
-      grants_gov_keywords: kw.status === 'fulfilled' ? kw.value.length : 'failed',
-      grants_gov_agencies: agencies.status === 'fulfilled' ? agencies.value.length : 'failed',
-      grants_gov_categories: cats.status === 'fulfilled' ? cats.value.length : 'failed',
-      foundation_rss: foundation.status === 'fulfilled' ? foundation.value.length : 'failed',
-      sbir: sbir.status === 'fulfilled' ? sbir.value.length : 'failed',
-      nih: nih.status === 'fulfilled' ? nih.value.length : 'failed',
+      grants_gov_keywords:    kw.status          === 'fulfilled' ? kw.value.length          : 'failed',
+      grants_gov_agencies:    agencies.status    === 'fulfilled' ? agencies.value.length    : 'failed',
+      grants_gov_categories:  cats.status        === 'fulfilled' ? cats.value.length        : 'failed',
+      foundation_rss:         foundation.status  === 'fulfilled' ? foundation.value.length  : 'failed',
+      sbir:                   sbir.status        === 'fulfilled' ? sbir.value.length        : 'failed',
+      nih:                    nih.status         === 'fulfilled' ? nih.value.length         : 'failed',
+      propublica:             propublica.status  === 'fulfilled' ? propublica.value.length  : 'failed',
+      usaspending:            usaspending.status === 'fulfilled' ? usaspending.value.length : 'failed',
+      state_grants:           stateGrants.status === 'fulfilled' ? stateGrants.value.length : 'failed',
     },
   });
 
