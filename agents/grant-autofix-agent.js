@@ -33,7 +33,10 @@ const FROM_EMAIL     = process.env.SENDGRID_FROM_EMAIL || 'treagent1@gmail.com';
 // Agent script paths — ordered by dependency
 const AGENT_SCRIPTS = {
   'grant-discovery-agent':  'agents/grant-discovery-agent.js',
+  'grant-amount-enricher':  'agents/grant-amount-enricher.js',
   'grant-scoring-agent':    'agents/grant-scoring-agent.js',
+  'grant-strategy-agent':   'agents/grant-strategy-agent.js',
+  'grant-intel-agent':      'agents/grant-intel-agent.js',
   'grant-alert-agent':      'agents/grant-alert-agent.js',
   'grant-deadline-monitor': 'agents/grant-deadline-monitor.js',
   'grant-health-monitor':   'agents/grant-health-monitor.js',
@@ -70,13 +73,13 @@ async function detectFailures() {
 
   const { data, error } = await supabase
     .from('system_log')
-    .select('agent, run_at, status')
+    .select('agent, run_at, status, grants_found, grants_added, details')
     .gte('run_at', since.toISOString())
     .order('run_at', { ascending: false });
 
   if (error) {
     log(`ERROR reading system_log: ${error.message}`);
-    return Object.keys(AGENT_SCRIPTS); // assume all failed if can't read
+    return Object.keys(AGENT_SCRIPTS).map(a => ({ agent: a, reason: 'could not read system_log' }));
   }
 
   // Latest run per agent today
@@ -92,6 +95,46 @@ async function detectFailures() {
       failures.push({ agent: agentKey, reason: 'did not run today' });
     } else if (run.status === 'error' || run.status === 'failed') {
       failures.push({ agent: agentKey, reason: `exited with status: ${run.status}` });
+    }
+  }
+
+  // SILENT FAIL DETECTION: scoring ran (status=success) but produced 0 results
+  const scoringRun = latest['grant-scoring-agent'];
+  if (scoringRun && scoringRun.status === 'success' && (scoringRun.grants_added || 0) === 0) {
+    // Check if there are actually unscored grants in the DB
+    try {
+      const { count } = await supabase.from('grants').select('*', { count: 'exact', head: true }).eq('status', 'new');
+      if ((count || 0) > 10) {
+        log(`SILENT FAIL DETECTED: scoring ran but ${count} grants still unscored`);
+        // Only add to failures if not already there
+        if (!failures.find(f => f.agent === 'grant-scoring-agent')) {
+          failures.push({ agent: 'grant-scoring-agent', reason: `silent fail — scored 0 but ${count} unscored grants remain` });
+        }
+      }
+    } catch (e) {
+      log(`Silent fail check error: ${e.message}`);
+    }
+  }
+
+  // SILENT FAIL DETECTION: discovery ran but added 0 grants 3 days in a row
+  const discoveryRun = latest['grant-discovery-agent'];
+  if (discoveryRun && discoveryRun.status === 'success' && (discoveryRun.grants_added || 0) === 0) {
+    try {
+      const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
+      const { data: recentRuns } = await supabase
+        .from('system_log')
+        .select('grants_added')
+        .eq('agent', 'grant-discovery-agent')
+        .gte('run_at', threeDaysAgo);
+      const consecutiveZeros = (recentRuns || []).every(r => (r.grants_added || 0) === 0);
+      if (consecutiveZeros && (recentRuns || []).length >= 2) {
+        log(`SILENT FAIL DETECTED: discovery added 0 grants for ${recentRuns.length} consecutive runs`);
+        if (!failures.find(f => f.agent === 'grant-discovery-agent')) {
+          failures.push({ agent: 'grant-discovery-agent', reason: `silent fail — 0 grants added for ${recentRuns.length} consecutive runs` });
+        }
+      }
+    } catch (e) {
+      log(`Discovery silent fail check error: ${e.message}`);
     }
   }
 

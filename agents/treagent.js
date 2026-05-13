@@ -48,10 +48,14 @@ const ALERT_EMAIL    = process.env.ALERT_EMAIL || TREAGENT_EMAIL;
 // Agent definitions — run order and display names
 const AGENTS = [
   { key: 'grant-discovery-agent',  name: 'Discovery',    icon: '🔍', schedule: '7:00 AM CT' },
-  { key: 'grant-scoring-agent',    name: 'Scoring',      icon: '🧠', schedule: '7:30 AM CT' },
-  { key: 'grant-alert-agent',      name: 'Alerts',       icon: '🚨', schedule: '7:30 AM CT' },
-  { key: 'grant-deadline-monitor', name: 'Deadlines',    icon: '📅', schedule: '8:00 AM CT' },
-  { key: 'grant-health-monitor',   name: 'Health Check', icon: '🏥', schedule: '8:30 AM CT' },
+  { key: 'grant-amount-enricher',  name: 'Enricher',     icon: '💰', schedule: '7:30 AM CT' },
+  { key: 'grant-scoring-agent',    name: 'Scoring',      icon: '🧠', schedule: '8:00 AM CT' },
+  { key: 'grant-strategy-agent',   name: 'Strategy',     icon: '🎯', schedule: '8:15 AM CT' },
+  { key: 'grant-intel-agent',      name: 'Intel',        icon: '🕵️', schedule: '8:20 AM CT' },
+  { key: 'grant-alert-agent',      name: 'Alerts',       icon: '🚨', schedule: '8:45 AM CT' },
+  { key: 'grant-deadline-monitor', name: 'Deadlines',    icon: '📅', schedule: '8:45 AM CT' },
+  { key: 'grant-health-monitor',   name: 'Health Check', icon: '🏥', schedule: '9:00 AM CT' },
+  { key: 'grant-autofix-agent',    name: 'Auto-Fix',     icon: '🔧', schedule: '9:15 AM CT' },
 ];
 
 function log(msg) { console.log(`[${new Date().toISOString()}] TREAGENT: ${msg}`); }
@@ -150,6 +154,36 @@ async function getPipelineMetrics() {
   };
 }
 
+// ── 2b. Pull latest strategy recommendations ────────────────
+async function getStrategyRecs() {
+  try {
+    const { data } = await supabase
+      .from('system_log')
+      .select('details, run_at')
+      .eq('agent', 'grant-strategy-agent')
+      .order('run_at', { ascending: false })
+      .limit(1);
+    if (!data?.length) return [];
+    const d = JSON.parse(data[0].details || '{}');
+    return (d.recommendations || []).slice(0, 3);
+  } catch { return []; }
+}
+
+// ── 2c. Pull latest intel summary ───────────────────────────
+async function getIntelSummary() {
+  try {
+    const { data } = await supabase
+      .from('system_log')
+      .select('details, run_at')
+      .eq('agent', 'grant-intel-agent')
+      .order('run_at', { ascending: false })
+      .limit(1);
+    if (!data?.length) return null;
+    const d = JSON.parse(data[0].details || '{}');
+    return d.summary || null;
+  } catch { return null; }
+}
+
 // ── 3. Get top 5 grants by score for the briefing ────────────
 async function getTopGrants() {
   const { data, error } = await supabase
@@ -216,7 +250,7 @@ function analyzeFailures(reports) {
 }
 
 // ── 5. Build CEO briefing email ───────────────────────────────
-function buildBriefingHTML(reports, metrics, topGrants, analysis, dateStr) {
+function buildBriefingHTML(reports, metrics, topGrants, analysis, dateStr, strategyRecs = [], intelSummary = null) {
   const { failures, warnings } = analysis;
   const systemHealth = failures.length === 0 ? 'HEALTHY' : 'DEGRADED';
   const healthColor  = failures.length === 0 ? '#34D399' : '#F87171';
@@ -387,10 +421,37 @@ function buildBriefingHTML(reports, metrics, topGrants, analysis, dateStr) {
     </table>
   </div>
 
+  ${strategyRecs.length ? `
+  <!-- AI Strategy Recommendations -->
+  <div style="margin-bottom:18px;">
+    <div style="font-size:10px;font-weight:700;color:#A78BFA;letter-spacing:.14em;text-transform:uppercase;margin-bottom:8px;">🎯 AI Strategic Recommendations</div>
+    <div style="background:#0B0F1A;border:1px solid rgba(167,139,250,.2);border-radius:10px;overflow:hidden;">
+      ${strategyRecs.map(r => {
+        const pc = r.priority === 'high' ? '#F87171' : r.priority === 'medium' ? '#F59E0B' : '#34D399';
+        return `<div style="padding:12px 16px;border-bottom:1px solid #1E2640;"><div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;"><span style="font-size:8px;font-weight:700;padding:1px 6px;border-radius:3px;background:${pc}22;color:${pc};text-transform:uppercase">${r.priority}</span><span style="font-size:11px;font-weight:700;color:#EDF0F7;">${r.title}</span></div><div style="font-size:11px;color:#8B95AB;line-height:1.6;">${r.insight}</div><div style="font-size:10px;color:#A78BFA;margin-top:4px;font-weight:600;">→ ${r.action}</div></div>`;
+      }).join('')}
+    </div>
+  </div>` : ''}
+
+  ${intelSummary ? `
+  <!-- Competitive Intelligence -->
+  <div style="margin-bottom:18px;">
+    <div style="font-size:10px;font-weight:700;color:#00E5FF;letter-spacing:.14em;text-transform:uppercase;margin-bottom:8px;">🕵️ Market Intelligence</div>
+    <div style="background:#0B0F1A;border:1px solid rgba(0,229,255,.15);border-radius:10px;padding:14px 16px;">
+      <div style="display:flex;gap:12px;flex-wrap:wrap;">
+        <div style="flex:1;min-width:90px;text-align:center;"><div style="font-size:18px;font-weight:800;color:#00E5FF;">$${Math.round((intelSummary.nobleAvgAward||0)/1000)}K</div><div style="font-size:9px;color:#4D5669;text-transform:uppercase;">Noble Avg Award</div></div>
+        <div style="flex:1;min-width:90px;text-align:center;"><div style="font-size:18px;font-weight:800;color:#34D399;">$${Math.round((intelSummary.walkerAvgAward||0)/1000)}K</div><div style="font-size:9px;color:#4D5669;text-transform:uppercase;">Walker Avg Award</div></div>
+        <div style="flex:1;min-width:90px;text-align:center;"><div style="font-size:18px;font-weight:800;color:#F59E0B;">${intelSummary.gapCount||0}</div><div style="font-size:9px;color:#4D5669;text-transform:uppercase;">Funding Gaps</div></div>
+        <div style="flex:1;min-width:90px;text-align:center;"><div style="font-size:18px;font-weight:800;color:#A78BFA;">${intelSummary.newGrantsGovToday||0}</div><div style="font-size:9px;color:#4D5669;text-transform:uppercase;">New Postings</div></div>
+      </div>
+      ${intelSummary.nobleTopAgency ? `<div style="margin-top:10px;font-size:11px;color:#8B95AB;">Top Noble Erne funder: <strong style="color:#EDF0F7;">${intelSummary.nobleTopAgency}</strong> &nbsp;·&nbsp; Top Walker funder: <strong style="color:#EDF0F7;">${intelSummary.walkerTopAgency||'N/A'}</strong></div>` : ''}
+    </div>
+  </div>` : ''}
+
   <!-- Footer -->
   <div style="padding:14px;background:#0B0F1A;border:1px solid rgba(255,255,255,.06);border-radius:8px;font-size:10px;color:#4D5669;text-align:center;line-height:1.7;">
     GRANT PRIME · Treagent CEO Briefing · Noble Erne, LLC &amp; Walker Contractors LLC<br>
-    Sub-agents: Discovery → Scoring → Alerts → Deadlines → Health Monitor → Treagent<br>
+    Pipeline: Discovery → Enrich → Scoring → Strategy + Intel → Tests → Alerts → Health → AutoFix → Treagent<br>
     Dashboard: <a href="https://axiom-federal-solutions.github.io/grant-prime/" style="color:#34D399;text-decoration:none;">axiom-federal-solutions.github.io/grant-prime</a>
   </div>
 
@@ -438,6 +499,12 @@ async function main() {
   log('Fetching top grants...');
   const topGrants = await getTopGrants();
 
+  log('Fetching strategy recommendations...');
+  const strategyRecs = await getStrategyRecs();
+
+  log('Fetching intel summary...');
+  const intelSummary = await getIntelSummary();
+
   log('Analyzing failures...');
   const analysis = analyzeFailures(reports);
 
@@ -450,7 +517,7 @@ async function main() {
     weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
   });
 
-  const html = buildBriefingHTML(reports, metrics, topGrants, analysis, dateStr);
+  const html = buildBriefingHTML(reports, metrics, topGrants, analysis, dateStr, strategyRecs, intelSummary);
 
   const systemStatus = failures.length === 0 ? 'HEALTHY' : 'DEGRADED';
   const subjectEmoji = failures.length === 0 ? '✅' : '⚠️';

@@ -177,13 +177,15 @@ body{font-family:'Outfit',system-ui,sans-serif;background:var(--bg);color:var(--
   <div class="sb-group">Monitor</div>
   <button class="sb-btn" onclick="go('deadlines',this)">⏰ Deadline Tracker</button>
   <button class="sb-btn" onclick="go('performance',this)">📈 Performance</button>
+  <div class="sb-group">Intelligence</div>
+  <button class="sb-btn" onclick="go('ai-insights',this)">🧠 AI Insights<span class="sb-dot" style="background:#a259ff;box-shadow:0 0 6px #a259ff"></span></button>
   <div class="sb-group">System</div>
   <button class="sb-btn" onclick="go('funders',this)">🤝 Funder Contacts</button>
   <button class="sb-btn" onclick="go('agents',this)">⚙️ Agents & Config</button>
   <button class="sb-btn" onclick="go('help',this)">❓ Help & FAQ</button>
   <button class="sb-btn" onclick="openSettings()" style="color:var(--amber)">🔧 API Server Setup</button>
   <div style="padding:10px 12px"><button onclick="exportCSV()" style="width:100%;padding:7px;border-radius:6px;border:1px solid var(--greenBd);background:var(--greenDim);color:var(--green);font-family:'Outfit',sans-serif;font-size:10px;font-weight:700;cursor:pointer;letter-spacing:.04em">⬇ Export CSV</button></div>
-  <div class="sb-foot">Noble Erne, LLC<br>treagent1@gmail.com<br>~$8–10/mo · 5 Agents · 5 Sources<br>Supabase: grant-prime-db<br><span id="last-load" style="color:var(--t3)">Loading…</span></div>
+  <div class="sb-foot">Noble Erne, LLC<br>treagent1@gmail.com<br>~$8–10/mo · 11 Agents · 5 Sources<br>Supabase: grant-prime-db<br><span id="last-load" style="color:var(--t3)">Loading…</span></div>
 </nav>
 
 <div class="main" id="mc">
@@ -206,6 +208,7 @@ body{font-family:'Outfit',system-ui,sans-serif;background:var(--bg);color:var(--
   <div id="t-performance"  class="tab" style="display:none"></div>
   <div id="t-funders"      class="tab" style="display:none"></div>
   <div id="t-agents"       class="tab" style="display:none"></div>
+  <div id="t-ai-insights"  class="tab" style="display:none"></div>
   <div id="t-help"         class="tab" style="display:none"></div>
 </div>
 
@@ -235,6 +238,7 @@ try {
     'https://pbkzjfzeazkfqxnjnari.supabase.co',
     'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBia3pqZnplYXprZnF4bmpuYXJpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgyOTIyNDUsImV4cCI6MjA5Mzg2ODI0NX0.g2Kd2TqD0SwJubE0fO7wIymOsWDbRAs6cl0N6gFmUi4'
   );
+  window.SUPABASE_CLIENT = sb; // expose for renderAIInsights + _loadHomeAIPreview
 } catch(initErr) {
   console.error('Supabase init failed:', initErr);
 }
@@ -259,6 +263,21 @@ function srcLabel(s){return {federal:'Federal',edtech:'EdTech/DOL',state:'State/
 function statusPill(s){const m={new:'sp-new',scored:'sp-scored',applied:'sp-applied',won:'sp-won',rejected:'sp-rejected',closed:'sp-closed'};return `<span class="${m[s]||'sp-new'}">${s}</span>`;}
 function urgencyClass(dl){const d=daysLeft(dl);if(d===null)return '';return d<=7?'urgent':d<=14?'warning':'';}
 function entityColor(e){if(!e)return 'var(--cyan)';if(e.toLowerCase().includes('walker'))return 'var(--green)';if(e.toLowerCase().includes('both'))return 'var(--violet)';return 'var(--cyan)';}
+function complexityBadge(g){
+  // Parse [Easy], [Moderate], [Intensive] from notes field
+  var notes=g.notes||'';
+  var m=notes.match(/\[(Easy|Moderate|Intensive)\]/i);
+  if(!m)return '';
+  var lvl=m[1];
+  var colors={Easy:['var(--green)','var(--greenDim)','var(--greenBd)'],Moderate:['var(--amber)','var(--amberDim)','rgba(245,158,11,.25)'],Intensive:['var(--red)','var(--redDim)','rgba(248,113,113,.25)']};
+  var c=colors[lvl]||colors.Moderate;
+  return '<span style="font-size:8px;font-weight:700;color:'+c[0]+';background:'+c[1]+';border:1px solid '+c[2]+';border-radius:3px;padding:1px 5px;letter-spacing:.05em;white-space:nowrap">'+lvl+'</span>';
+}
+function matchReasonText(g){
+  var notes=g.notes||'';
+  // Strip all bracketed tags and return the remainder as the match reason
+  return notes.replace(/\[[^\]]+\]/g,'').trim();
+}
 function sdvosbBadge(g){
   const ent=(g.entity_fit||g.notes||'').toLowerCase();
   const isWalker=ent.includes('walker')||ent.includes('sdvosb');
@@ -304,6 +323,7 @@ function render(tab){
     'hidden-gems':renderHiddenGems,
     'always-open':renderAlwaysOpen,
     'microgrants':renderMicrogrants,
+    'ai-insights':renderAIInsights,
     federal:()=>renderGrantList('federal'),edtech:()=>renderGrantList('edtech'),
     state:()=>renderGrantList('state'),foundation:()=>renderGrantList('foundation'),
     applications:renderApplications,won:renderWon,deadlines:renderDeadlines,
@@ -608,7 +628,9 @@ function renderHome(){
       <div class="kpi"><div class="kpi-val" style="color:var(--gold)">${applied}</div><div class="kpi-lbl">Applications Out</div><div class="kpi-sub">Submitted</div></div>
       <div class="kpi"><div class="kpi-val" style="color:var(--red)">${closing7}</div><div class="kpi-lbl">Closing ≤7 Days</div><div class="kpi-sub">Urgent</div></div>
       <div class="kpi"><div class="kpi-val" style="color:var(--violet)">${won}</div><div class="kpi-lbl">Grants Won</div><div class="kpi-sub">Funded</div></div>
-      <div class="kpi"><div class="kpi-val" style="color:var(--cyan)">${fmt(pipeline)}</div><div class="kpi-lbl">Pipeline Value</div><div class="kpi-sub">Applied total</div></div>
+      <div class="kpi"><div class="kpi-val" style="color:var(--cyan)">${fmt(pipeline)}</div><div class="kpi-lbl">Applied Pipeline</div><div class="kpi-sub">Submitted total</div></div>
+      <div class="kpi"><div class="kpi-val" style="color:#a259ff">${fmt(Math.round(GRANTS.filter(g=>g.status!=='closed'&&g.status!=='rejected').reduce((a,g)=>a+((g.amount_max||0)*(g.score||0)/100),0)))}</div><div class="kpi-lbl">Weighted Pipeline</div><div class="kpi-sub">Score × Amount</div></div>
+      <div class="kpi"><div class="kpi-val" style="color:var(--amber)">${GRANTS.filter(g=>{var d=daysLeft(g.deadline);return d!==null&&d<=30&&g.status!=='closed'&&g.status!=='won';}).length}</div><div class="kpi-lbl">Closing in 30d</div><div class="kpi-sub">All active</div></div>
     </div>
 
     <!-- Search bar — below KPIs, dropdown uses fixed positioning to avoid overlap -->
@@ -638,15 +660,41 @@ function renderHome(){
       </div>
       <div>
         <div class="card-section">
-          <div class="card-title">🆕 Recently Discovered</div>
-          ${recent.length?recent.map(g=>`<div class="feed-item" style="cursor:pointer" onclick="openGrantDetail('${g.grant_id||g.id}')"><div style="flex:1"><div style="font-size:11px;font-weight:600">${(g.title||'Untitled').slice(0,48)}…</div><div style="font-size:10px;color:var(--t3);margin-top:2px">${g.funder||'—'} · ${fmtDate(g.deadline)}</div></div><div>${statusPill(g.status||'new')}</div></div>`).join(''):'<div class="empty"><div class="empty-body">No grants loaded yet</div></div>'}
+          <div class="card-title">🆕 New This Week</div>
+          ${(function(){var sevenDaysAgo=new Date(Date.now()-7*86400000);var newThisWeek=[...GRANTS].filter(g=>g.created_at&&new Date(g.created_at)>=sevenDaysAgo).sort((a,b)=>new Date(b.created_at)-new Date(a.created_at)).slice(0,6);return newThisWeek.length?'<div style="font-size:10px;color:var(--green);font-weight:600;margin-bottom:8px">'+newThisWeek.length+' new grant'+(newThisWeek.length!==1?'s':'')+' added in the last 7 days</div>'+newThisWeek.map(g=>'<div class="feed-item" style="cursor:pointer" onclick="openGrantDetail(\''+(g.grant_id||g.id)+'\')"><div style="flex:1"><div style="font-size:11px;font-weight:600">'+(g.title||'Untitled').slice(0,48)+'…</div><div style="font-size:10px;color:var(--t3);margin-top:2px">'+(g.funder||'—')+' · <span style="color:'+srcColor(g.source)+'">'+srcLabel(g.source)+'</span></div></div><div style="font-size:14px;font-weight:700;color:'+sc(g.score||0)+'">'+(g.score||'?')+'</div></div>').join(''):'<div style="color:var(--t3);font-size:11px;padding:8px 0">No new grants this week — next discovery runs at 7:00 AM CT</div>';})()}
         </div>
         <div class="card-section">
           <div class="card-title">🚨 Urgent Deadlines</div>
           ${_urgentHtml}
         </div>
+        <div class="card-section" style="border-top:2px solid rgba(162,89,255,.3)">
+          <div class="card-title" style="color:#a259ff">🧠 AI Strategy Preview <span style="font-size:9px;font-weight:400;color:var(--t3)">· <span onclick="go('ai-insights',document.querySelector('.sb-btn[onclick*=ai-insights]'))" style="cursor:pointer;color:#a259ff">View Full →</span></span></div>
+          <div id="home-ai-preview" style="font-size:11px;color:var(--t3)">Loading AI recommendations…</div>
+        </div>
       </div>
     </div>`;
+  // Async: load AI preview from system_log
+  _loadHomeAIPreview();
+}
+
+function _loadHomeAIPreview(){
+  var preview=document.getElementById('home-ai-preview');
+  if(!preview||!window.SUPABASE_CLIENT)return;
+  var since=new Date(Date.now()-7*24*60*60*1000).toISOString();
+  window.SUPABASE_CLIENT.from('system_log').select('details,run_at').eq('agent','grant-strategy-agent').gte('run_at',since).order('run_at',{ascending:false}).limit(1).then(function(res){
+    var row=res.data&&res.data.length?res.data[0]:null;
+    if(!row){preview.textContent='Run npm run strategy to generate AI recommendations.';return;}
+    var d={};try{d=JSON.parse(row.details||'{}');}catch(e){}
+    var recs=(d.recommendations||[]).slice(0,2);
+    if(!recs.length){preview.textContent='No recommendations generated yet.';return;}
+    var pc={high:'var(--red)',medium:'var(--amber)',low:'var(--green)'};
+    preview.innerHTML=recs.map(function(r){
+      return '<div style="margin-bottom:8px;padding:8px 10px;background:var(--bg3);border-left:2px solid '+(pc[r.priority]||'#a259ff')+';border-radius:0 5px 5px 0">'
+        +'<div style="font-size:11px;font-weight:700;color:var(--t1);margin-bottom:2px">'+r.title+'</div>'
+        +'<div style="font-size:10px;color:var(--t2)">'+r.action+'</div>'
+        +'</div>';
+    }).join('');
+  }).catch(function(){preview.textContent='Could not load AI insights.';});
 }
 
 // ── ACTION QUEUE ──────────────────────────────────────────────────────────
@@ -1037,17 +1085,168 @@ function renderPerformance(){
     <div class="card-section" style="margin-top:14px"><div class="card-title">Score Distribution</div>${scoreRows}</div>`;
 }
 
+// ── AI INSIGHTS ───────────────────────────────────────────────────────────
+// Reads strategy recommendations + intel data from system_log via Supabase
+function renderAIInsights(){
+  var el=document.getElementById('t-ai-insights');
+  el.innerHTML='<div style="margin-bottom:18px"><div style="font-size:20px;font-weight:800">🧠 AI Insights</div>'
+    +'<div style="font-size:11px;color:var(--t3);margin-top:2px">Strategy recommendations · competitive intelligence · funding gaps</div></div>'
+    +'<div style="text-align:center;padding:30px;color:var(--t3)"><div style="font-size:28px;margin-bottom:10px">⏳</div><div style="font-size:13px">Loading AI insights from system log…</div></div>';
+
+  // Load directly from Supabase
+  if(!window.SUPABASE_CLIENT){el.innerHTML+='<div style="color:var(--red);font-size:11px;padding:10px">Supabase not connected</div>';return;}
+  var today=new Date();today.setDate(today.getDate()-7); // look back 7 days for fresh data
+
+  Promise.allSettled([
+    window.SUPABASE_CLIENT.from('system_log').select('details,run_at').eq('agent','grant-strategy-agent').gte('run_at',today.toISOString()).order('run_at',{ascending:false}).limit(1),
+    window.SUPABASE_CLIENT.from('system_log').select('details,run_at').eq('agent','grant-intel-agent').gte('run_at',today.toISOString()).order('run_at',{ascending:false}).limit(1),
+  ]).then(function(results){
+    var strategyRow=results[0].status==='fulfilled'&&results[0].value.data?.length?results[0].value.data[0]:null;
+    var intelRow=results[1].status==='fulfilled'&&results[1].value.data?.length?results[1].value.data[0]:null;
+
+    var stratData=null,intelData=null;
+    try{if(strategyRow)stratData=JSON.parse(strategyRow.details||'{}');}catch(e){}
+    try{if(intelRow)intelData=JSON.parse(intelRow.details||'{}');}catch(e){}
+
+    var recs=stratData?.recommendations||[];
+    var stats=stratData?.stats||null;
+    var intel=intelData||null;
+    var summary=intel?.summary||null;
+    var gaps=intel?.fundingGaps||[];
+    var nobleAwards=intel?.nobleErneSector?.awards||[];
+    var walkerAwards=intel?.walkerSector?.awards||[];
+
+    var prioColor={high:'var(--red)',medium:'var(--amber)',low:'var(--green)'};
+
+    // ── Recommendations ──
+    var recsHtml='';
+    if(recs.length){
+      recsHtml='<div class="card-section" style="margin-bottom:16px">'
+        +'<div class="card-title" style="color:#a259ff">🎯 Strategic Recommendations'+(strategyRow?' <span style="font-size:9px;font-weight:400;color:var(--t3)">· '+new Date(strategyRow.run_at).toLocaleDateString()+'</span>':'')+'</div>'
+        +recs.map(function(r){
+          var pc=prioColor[r.priority]||'var(--t2)';
+          return '<div style="margin-bottom:12px;border-left:3px solid '+pc+';padding:10px 14px;background:var(--bg3);border-radius:0 8px 8px 0">'
+            +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:5px">'
+            +'<span style="font-size:8px;font-weight:700;padding:1px 5px;border-radius:3px;background:'+pc+'22;color:'+pc+';text-transform:uppercase">'+r.priority+'</span>'
+            +'<span style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.08em">'+r.category+'</span>'
+            +'<span style="font-size:12px;font-weight:700;color:var(--t1);margin-left:4px">'+r.title+'</span>'
+            +'</div>'
+            +'<div style="font-size:11px;color:var(--t2);line-height:1.65;margin-bottom:5px">'+r.insight+'</div>'
+            +'<div style="font-size:10px;color:#a259ff;font-weight:600">→ '+r.action+'</div>'
+            +'</div>';
+        }).join('')
+        +'</div>';
+    } else {
+      recsHtml='<div class="card-section" style="margin-bottom:16px"><div class="card-title" style="color:#a259ff">🎯 Strategic Recommendations</div>'
+        +'<div class="empty" style="padding:24px"><div class="empty-icon">🎯</div><div class="empty-title">No recommendations yet</div>'
+        +'<div class="empty-body">Run <code style="color:var(--cyan)">npm run strategy</code> to generate AI recommendations based on your pipeline.</div></div></div>';
+    }
+
+    // ── Pipeline Stats (from strategy) ──
+    var statsHtml='';
+    if(stats){
+      var weighted=stats.weightedPipeline||0;
+      var total=stats.totalPipeline||0;
+      statsHtml='<div class="card-section" style="margin-bottom:16px">'
+        +'<div class="card-title">📊 Pipeline Intelligence</div>'
+        +'<div class="kpi-row" style="margin-bottom:12px">'
+        +'<div class="kpi"><div class="kpi-val" style="color:var(--cyan)">'+stats.total+'</div><div class="kpi-lbl">Active Grants</div></div>'
+        +'<div class="kpi"><div class="kpi-val" style="color:var(--green)">$'+Math.round(weighted/1000)+'K</div><div class="kpi-lbl">Probability-Weighted</div><div class="kpi-sub">Score × Amount</div></div>'
+        +'<div class="kpi"><div class="kpi-val" style="color:var(--red)">'+(stats.closing7||0)+'</div><div class="kpi-lbl">Close in 7 Days</div></div>'
+        +'<div class="kpi"><div class="kpi-val" style="color:var(--gold)">'+(stats.winRate||0)+'%</div><div class="kpi-lbl">Win Rate</div></div>'
+        +'</div>';
+      if(stats.dist){
+        var d=stats.dist;var tot=Object.values(d).reduce(function(a,b){return a+b;},0)||1;
+        statsHtml+='<div style="font-size:10px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">Score Distribution</div>'
+          +[['80-100','var(--green)'],['65-79','var(--gold)'],['50-64','var(--amber)'],['0-49','var(--red)']].map(function(b){
+            var count=d[b[0]]||0,pct=Math.round(count/tot*100);
+            return '<div style="margin-bottom:8px"><div style="display:flex;justify-content:space-between;font-size:10px;margin-bottom:3px"><span style="color:'+b[1]+'">Score '+b[0]+'</span><span style="color:var(--t2)">'+count+' ('+pct+'%)</span></div><div class="bar"><div class="bar-fill" style="width:'+pct+'%;background:'+b[1]+'"></div></div></div>';
+          }).join('');
+      }
+      statsHtml+='</div>';
+    }
+
+    // ── Intel: competitive awards ──
+    var intelHtml='';
+    if(summary){
+      intelHtml='<div class="card-section" style="margin-bottom:16px">'
+        +'<div class="card-title" style="color:var(--cyan)">🕵️ Competitive Intelligence'+(intelRow?' <span style="font-size:9px;font-weight:400;color:var(--t3)">· '+new Date(intelRow.run_at).toLocaleDateString()+'</span>':'')+'</div>'
+        +'<div class="kpi-row" style="margin-bottom:14px">'
+        +'<div class="kpi"><div class="kpi-val" style="color:var(--cyan)">$'+Math.round((summary.nobleAvgAward||0)/1000)+'K</div><div class="kpi-lbl">Noble Avg Award</div><div class="kpi-sub">USASpending data</div></div>'
+        +'<div class="kpi"><div class="kpi-val" style="color:var(--green)">$'+Math.round((summary.walkerAvgAward||0)/1000)+'K</div><div class="kpi-lbl">Walker Avg Award</div><div class="kpi-sub">USASpending data</div></div>'
+        +'<div class="kpi"><div class="kpi-val" style="color:var(--amber)">'+(summary.targetStateHits||0)+'</div><div class="kpi-lbl">TX/LA/VA/FL Hits</div></div>'
+        +'<div class="kpi"><div class="kpi-val" style="color:var(--violet)">'+(summary.newGrantsGovToday||0)+'</div><div class="kpi-lbl">New Postings</div></div>'
+        +'</div>';
+      if(nobleAwards.length){
+        intelHtml+='<div style="font-size:10px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">Recent Winners in Noble Erne NAICS Codes</div>';
+        intelHtml+=nobleAwards.slice(0,5).map(function(a){
+          return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--bd)">'
+            +'<div style="font-size:11px;color:var(--t1)">'+(a.recipient||'Unknown').slice(0,44)+'</div>'
+            +'<div style="display:flex;gap:12px;align-items:center">'
+            +'<span style="font-size:10px;color:var(--t3)">'+(a.agency||'—').slice(0,25)+'</span>'
+            +'<span style="font-size:12px;font-weight:700;color:var(--green)">$'+Math.round((a.amount||0)/1000)+'K</span>'
+            +'</div></div>';
+        }).join('');
+      }
+      intelHtml+='</div>';
+    }
+
+    // ── Funding Gaps ──
+    var gapsHtml='';
+    if(gaps.length){
+      gapsHtml='<div class="card-section" style="margin-bottom:16px">'
+        +'<div class="card-title" style="color:var(--amber)">⚠️ Funding Category Gaps</div>'
+        +'<div style="font-size:11px;color:var(--t2);margin-bottom:10px">Categories where you qualify but have 0 high-scoring grants tracked:</div>'
+        +gaps.map(function(g){
+          return '<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--amberDim);border:1px solid rgba(245,158,11,.2);border-radius:6px;margin-bottom:6px">'
+            +'<span style="font-size:14px">⚠️</span>'
+            +'<span style="font-size:12px;font-weight:600;color:var(--amber)">'+g+'</span>'
+            +'<span style="font-size:10px;color:var(--t3);margin-left:auto">0 grants tracked</span>'
+            +'</div>';
+        }).join('')
+        +'</div>';
+    }
+
+    var noData=!recs.length&&!stats&&!summary;
+    if(noData){
+      el.innerHTML='<div style="margin-bottom:18px"><div style="font-size:20px;font-weight:800">🧠 AI Insights</div>'
+        +'<div style="font-size:11px;color:var(--t3);margin-top:2px">Strategy · intelligence · gaps</div></div>'
+        +'<div class="empty"><div class="empty-icon">🧠</div><div class="empty-title">AI Insights not yet generated</div>'
+        +'<div class="empty-body">These tabs populate after the strategy and intel agents run.<br><br>'
+        +'Run locally: <code style="color:var(--cyan)">npm run strategy && npm run intel</code><br><br>'
+        +'Or trigger GitHub Actions to run the full daily pipeline.</div></div>';
+      return;
+    }
+
+    el.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px">'
+      +'<div><div style="font-size:20px;font-weight:800">🧠 AI Insights</div>'
+      +'<div style="font-size:11px;color:var(--t3);margin-top:2px">Strategy recommendations · competitive intelligence · funding gaps</div></div>'
+      +'<button class="refresh-btn" onclick="renderAIInsights()">↻ Refresh</button>'
+      +'</div>'
+      +recsHtml+statsHtml+intelHtml+gapsHtml;
+  }).catch(function(err){
+    el.innerHTML='<div style="color:var(--red);padding:20px;font-size:12px">AI Insights load error: '+err.message+'</div>';
+  });
+}
+
 // ── AGENTS ────────────────────────────────────────────────────────────────
 function renderAgents(){
   const el=document.getElementById('t-agents');
   el.innerHTML=`
     <div style="margin-bottom:18px"><div style="font-size:20px;font-weight:800">⚙️ Agents & Config</div><div style="font-size:11px;color:var(--t3);margin-top:2px">GRANT PRIME automation · Noble Erne, LLC</div></div>
     <div class="grid2">
-      ${[{name:'grant-discovery-agent.js',icon:'🔍',color:'var(--cyan)',schedule:'Daily 6:00 AM CT',desc:'Pulls from Grants.gov, DOL, DOE, and foundation sources. Deduplicates by grant_id. Inserts new records with status "new".'},
-        {name:'grant-scoring-agent.js',icon:'🧠',color:'var(--gold)',schedule:'Daily 6:15 AM CT',desc:'Scores all "new" grants using Claude Haiku in batches of 20. Scores 0–100 against Noble Erne\'s SAP/EdTech profile.'},
-        {name:'grant-alert-agent.js',icon:'📧',color:'var(--green)',schedule:'Daily 7:30 AM CT',desc:'Sends HTML email digest to treagent1@gmail.com with grants scored ≥70 closing in 60 days.'},
-        {name:'grant-deadline-monitor.js',icon:'⏰',color:'var(--amber)',schedule:'Daily 8:00 AM CT',desc:'Sends 7/14/30-day reminders. Auto-closes expired grants — never deletes.'},
-        {name:'grant-proposal-agent.js',icon:'✍️',color:'var(--violet)',schedule:'Manual trigger only',desc:'Drafts full application narrative using Claude Sonnet. Run: node agents/grant-proposal-agent.js <uuid>'}
+      ${[{name:'grant-discovery-agent.js',icon:'🔍',color:'var(--cyan)',schedule:'Daily 7:00 AM CT',desc:'Pulls from Grants.gov, DOL, DOE, and foundation sources. Deduplicates by grant_id. Inserts new records with status "new".'},
+        {name:'grant-amount-enricher.js',icon:'💰',color:'var(--green)',schedule:'Daily 7:30 AM CT',desc:'Fills missing award amounts by querying USASpending.gov and Grants.gov. Runs BEFORE scoring so amounts improve score quality.'},
+        {name:'grant-scoring-agent.js',icon:'🧠',color:'var(--gold)',schedule:'Daily 8:00 AM CT',desc:'Scores all "new" grants using Claude Haiku in batches of 20. Scores 0–100 with complexity (Easy/Moderate/Intensive). Silent-fail detection built in.'},
+        {name:'grant-strategy-agent.js',icon:'🎯',color:'#a259ff',schedule:'Daily 8:15 AM CT',desc:'Reads all scored grants, computes pipeline stats, then calls Claude Haiku for 6 strategic recommendations. Emails brief + posts to system_log.'},
+        {name:'grant-intel-agent.js',icon:'🕵️',color:'var(--cyan)',schedule:'Daily 8:20 AM CT',desc:'Queries USASpending.gov for recent winners in Noble Erne & Walker NAICS codes. Identifies funding category gaps. Checks Grants.gov new postings.'},
+        {name:'grant-test-runner.js',icon:'🧪',color:'var(--t2)',schedule:'Daily 8:30 AM CT',desc:'Validates data integrity: checks for orphaned records, missing scores, schema drift. Writes pass/fail to system_log.'},
+        {name:'grant-alert-agent.js',icon:'📧',color:'var(--green)',schedule:'Daily 8:45 AM CT',desc:'Sends HTML email digest to treagent1@gmail.com with grants scored ≥70 closing in 60 days.'},
+        {name:'grant-deadline-monitor.js',icon:'⏰',color:'var(--amber)',schedule:'Daily 8:45 AM CT',desc:'Sends 7/14/30-day reminders. Auto-closes expired grants — never deletes.'},
+        {name:'grant-health-monitor.js',icon:'🏥',color:'var(--red)',schedule:'Daily 9:00 AM CT',desc:'Runs 13 health checks: Supabase connection, agent run status, silent fail detection, pipeline value, strategy+intel freshness.'},
+        {name:'grant-autofix-agent.js',icon:'🔧',color:'var(--amber)',schedule:'Daily 9:15 AM CT',desc:'Reads system_log for today\'s failures. Auto-retries failed agents (up to 2 attempts). Detects silent fails. Emails fix report to treagent.'},
+        {name:'treagent.js',icon:'👑',color:'var(--gold)',schedule:'Daily 9:30 AM CT',desc:'CEO orchestrator. Reads all agent results, top grants, strategy recs, intel summary. Sends one elegant daily briefing email to treagent1@gmail.com.'},
+        {name:'grant-proposal-agent.js',icon:'✍️',color:'var(--violet)',schedule:'Manual trigger only',desc:'Drafts full application narrative using Claude Sonnet. Triggered via dashboard button or: node agents/grant-proposal-agent.js <uuid>'}
       ].map(a=>`<div class="card-section"><div style="display:flex;align-items:center;gap:10px;margin-bottom:10px"><span style="font-size:22px">${a.icon}</span><div><div style="font-size:12px;font-weight:700;color:${a.color}">${a.name}</div><div style="font-size:10px;color:var(--t3)">${a.schedule}</div></div></div><div style="font-size:11px;color:var(--t2);line-height:1.6">${a.desc}</div></div>`).join('')}
       <div class="card-section"><div class="card-title">Environment Variables</div>${['SUPABASE_URL','SUPABASE_KEY','ANTHROPIC_API_KEY','SENDGRID_API_KEY','SENDGRID_FROM_EMAIL','GRANTS_GOV_API_KEY','SAM_GOV_API_KEY'].map(v=>`<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--bd);font-size:10px"><span style="color:var(--cyan);font-family:monospace">${v}</span><span class="sp-scored">Required</span></div>`).join('')}<div style="margin-top:10px;font-size:10px;color:var(--t3)">GitHub repo → Settings → Secrets and Variables → Actions</div></div>
     </div>
@@ -1153,7 +1352,25 @@ function openGrantDetail(grantId){
         <span id="status-saving" style="font-size:9px;color:var(--t3);display:block;margin-top:5px"></span>
       </div>
 
-      ${g.notes?`<div style="background:var(--card);border-radius:6px;padding:10px;margin-bottom:10px"><div style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em;margin-bottom:4px">AI Reasoning</div><div style="font-size:11px;color:var(--t2);line-height:1.6">${g.notes}</div></div>`:''}
+      ${(function(){
+        if(!g.notes)return '';
+        var reason=matchReasonText(g);
+        var cBadge=complexityBadge(g);
+        var notes=g.notes;
+        var mEntity=notes.match(/^\[([^\]]+)\]/);
+        var entity=mEntity?mEntity[1]:'';
+        var mCat=notes.match(/^\[[^\]]+\]\[([^\]]+)\]/);
+        var cat=mCat?mCat[1]:'';
+        var entityBadge=entity?'<span style="font-size:8px;font-weight:700;color:'+entityColor(entity)+';background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:3px;padding:1px 5px;letter-spacing:.05em">'+entity+'</span>':'';
+        var catBadge=cat?'<span style="font-size:8px;font-weight:700;color:var(--t2);background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:3px;padding:1px 5px;letter-spacing:.05em">'+cat+'</span>':'';
+        return '<div style="background:var(--card);border-radius:6px;padding:10px;margin-bottom:10px">'
+          +'<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:'+(reason?'8':'0')+'px">'
+          +'<span style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em">AI Reasoning</span>'
+          +cBadge+entityBadge+catBadge
+          +'</div>'
+          +(reason?'<div style="font-size:11px;color:var(--t2);line-height:1.6">'+reason+'</div>':'')
+          +'</div>';
+      })()}
     </div>
 
     <!-- Details -->

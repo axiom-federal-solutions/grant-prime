@@ -8,16 +8,18 @@
     "setup":     "node setup.js",
     "server":    "node server.js",
     "discovery": "node agents/grant-discovery-agent.js",
+    "enrich":    "node agents/grant-amount-enricher.js",
     "scoring":   "node agents/grant-scoring-agent.js",
+    "strategy":  "node agents/grant-strategy-agent.js",
+    "intel":     "node agents/grant-intel-agent.js",
     "alert":     "node agents/grant-alert-agent.js",
     "deadlines": "node agents/grant-deadline-monitor.js",
-    "proposal":  "node agents/grant-proposal-agent.js",
-    "treagent":  "node agents/treagent.js",
-    "autofix":   "node agents/grant-autofix-agent.js",
-    "test":      "node agents/grant-test-runner.js",
     "health":    "node agents/grant-health-monitor.js",
-    "enrich":    "node agents/grant-amount-enricher.js",
-    "daily":     "node agents/grant-discovery-agent.js && node agents/grant-amount-enricher.js && node agents/grant-scoring-agent.js && node agents/grant-test-runner.js && node agents/grant-alert-agent.js && node agents/grant-deadline-monitor.js && node agents/grant-health-monitor.js && node agents/grant-autofix-agent.js && node agents/treagent.js"
+    "autofix":   "node agents/grant-autofix-agent.js",
+    "treagent":  "node agents/treagent.js",
+    "test":      "node agents/grant-test-runner.js",
+    "proposal":  "node agents/grant-proposal-agent.js",
+    "daily":     "node agents/grant-discovery-agent.js && node agents/grant-amount-enricher.js && node agents/grant-scoring-agent.js && node agents/grant-strategy-agent.js && node agents/grant-intel-agent.js && node agents/grant-test-runner.js && node agents/grant-alert-agent.js && node agents/grant-deadline-monitor.js && node agents/grant-health-monitor.js && node agents/grant-autofix-agent.js && node agents/treagent.js"
   },
   "engines": {
     "node": ">=22"

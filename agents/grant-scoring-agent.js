@@ -152,8 +152,13 @@ AUTOMATIC HIGH SCORES — Noble Erne (STEM):
 SUBCONTRACTING OPPORTUNITIES — BOTH entities:
 - Any grant/contract mentioning: "subcontracting plan", "mentor protege", "small business teaming", "prime contractor", "subcontract", "teaming agreement" → use entity "Both" and score 75+ if either entity has relevant NAICS. Note "Subcontracting opportunity" in reason.
 
+COMPLEXITY RATING (estimate application effort):
+- "Easy": <10 pages, no cost-share, no audit, single form, <1 week to complete
+- "Moderate": 10-30 pages, some attachments, standard compliance, 1-3 weeks
+- "Intensive": 30+ pages, cost-share required, multi-year reporting, federal audit, SAM/UEI required, 3+ weeks
+
 Return a JSON array ONLY — no markdown, no explanation outside the array.
-Format: [{"id": "<grant_uuid>", "score": <0-100>, "entity": "<Noble Erne|Walker Contractors|Both>", "category": "<EdTech|STEM|Construction|Foundation|Federal|Subcontract>", "reason": "<one sentence max 120 chars>"}]
+Format: [{"id": "<grant_uuid>", "score": <0-100>, "entity": "<Noble Erne|Walker Contractors|Both>", "category": "<EdTech|STEM|Construction|Foundation|Federal|Subcontract>", "complexity": "<Easy|Moderate|Intensive>", "reason": "<one sentence max 120 chars>"}]
 
 Category rules:
 - "STEM" if the grant is science/technology/engineering/math R&D, computer science education, robotics, NSF/NIH funded
@@ -192,16 +197,25 @@ async function updateScores(scores) {
   let updated = 0;
 
   for (const item of scores) {
-    // Encode entity + category into notes — category column not in current schema.
-    // To add it: ALTER TABLE grants ADD COLUMN category TEXT;
-    const entityLabel = item.entity   ? `[${item.entity}] `   : '';
-    const catLabel    = item.category ? `[${item.category}] ` : '';
+    // SILENT FAIL FIX: score=0 with a failure reason means Haiku error — don't mark as 'scored'
+    // Leave status as 'new' so autofix can re-queue it
+    if (item.score === 0 && (item.reason || '').includes('Scoring failed')) {
+      log(`  Skipping silent-fail grant ${item.id} (score=0, haiku error) — will retry`);
+      updated--; // will be incremented back down below, but don't count this
+      continue;
+    }
+
+    // Encode entity + category + complexity into structured notes field
+    // Format: [Noble Erne][EdTech][Easy] reason text
+    const entityLabel     = item.entity     ? `[${item.entity}] `     : '';
+    const catLabel        = item.category   ? `[${item.category}] `   : '';
+    const complexityLabel = item.complexity ? `[${item.complexity}] ` : '';
     const { error } = await supabase
       .from('grants')
       .update({
         score:      item.score,
         entity_fit: item.entity || 'Noble Erne',
-        notes:      `${entityLabel}${catLabel}${item.reason || ''}`,
+        notes:      `${entityLabel}${catLabel}${complexityLabel}${item.reason || ''}`,
         status:     'scored',
       })
       .eq('id', item.id);

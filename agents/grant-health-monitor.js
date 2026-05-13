@@ -183,14 +183,86 @@ async function checkSendGrid() {
 }
 
 async function checkBudgetCoverage() {
-  // Verify that a reasonable % of grants have amount_max populated (data quality)
   try {
     const { count: total } = await supabase.from('grants').select('*', { count: 'exact', head: true }).neq('status', 'closed');
     const { count: withAmount } = await supabase.from('grants').select('*', { count: 'exact', head: true }).not('amount_max', 'is', null).neq('status', 'closed');
     if (!total) return { pass: true, message: 'No active grants to evaluate', value: 0 };
     const pct = Math.round((withAmount / total) * 100);
-    const pass = pct >= 30; // warn if less than 30% of grants have budget data
+    const pass = pct >= 30;
     return { pass, message: pass ? `${pct}% of grants have award amounts (${withAmount}/${total})` : `Only ${pct}% of grants have award amounts — data quality low`, value: pct };
+  } catch (e) {
+    return { pass: false, message: e.message, value: 0 };
+  }
+}
+
+// SILENT FAIL: scoring ran but >60% of today's scored grants have score=0 (Haiku API fail)
+async function checkSilentScoringFail() {
+  try {
+    const since = new Date(); since.setHours(0, 0, 0, 0);
+    const { data, error } = await supabase
+      .from('grants')
+      .select('score')
+      .eq('status', 'scored')
+      .gte('updated_at', since.toISOString());
+    if (error) return { pass: true, message: 'Could not check scoring quality (non-critical)', value: null };
+    if (!data?.length) return { pass: true, message: 'No grants scored today yet', value: null };
+    const zeroCount = data.filter(g => (g.score || 0) === 0).length;
+    const zeroPct = Math.round(zeroCount / data.length * 100);
+    const pass = zeroPct < 60;
+    return {
+      pass,
+      message: pass
+        ? `Silent fail check OK: ${data.length} scored today, ${zeroCount} zero-scored (${zeroPct}%)`
+        : `SILENT FAIL: ${zeroPct}% of today's scored grants have score=0 — Haiku API likely failed`,
+      value: zeroPct,
+    };
+  } catch (e) {
+    return { pass: true, message: `Silent fail check error: ${e.message}`, value: null };
+  }
+}
+
+// Check strategy + intel agents ran recently (within 48h — they may not run daily in degraded states)
+async function checkStrategyAndIntel() {
+  try {
+    const since = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+    const { data } = await supabase
+      .from('system_log')
+      .select('agent, run_at, status')
+      .in('agent', ['grant-strategy-agent', 'grant-intel-agent'])
+      .gte('run_at', since)
+      .order('run_at', { ascending: false });
+    const agents = new Set((data || []).map(r => r.agent));
+    const pass = agents.has('grant-strategy-agent') && agents.has('grant-intel-agent');
+    return {
+      pass,
+      message: pass
+        ? 'Strategy and Intel agents ran within 48h'
+        : `Missing: ${!agents.has('grant-strategy-agent') ? 'strategy-agent ' : ''}${!agents.has('grant-intel-agent') ? 'intel-agent' : ''} — AI insights may be stale`,
+      value: agents.size,
+    };
+  } catch (e) {
+    return { pass: true, message: `Strategy/intel check failed: ${e.message}`, value: null };
+  }
+}
+
+// Check that the pipeline has actionable value (probability-weighted > $10K)
+async function checkPipelineValue() {
+  try {
+    const { data } = await supabase
+      .from('grants')
+      .select('score, amount_max')
+      .not('status', 'in', '("closed","won","rejected")')
+      .gte('score', 50);
+    if (!data?.length) return { pass: false, message: 'No scored active grants — pipeline empty', value: 0 };
+    const weighted = data.reduce((s, g) => s + ((g.amount_max || 0) * (g.score || 0) / 100), 0);
+    const pass = weighted > 10000;
+    return {
+      pass,
+      message: pass
+        ? `Probability-weighted pipeline: $${Math.round(weighted / 1000)}K`
+        : `Pipeline value critically low: $${Math.round(weighted / 1000)}K — run discovery + scoring`,
+      value: Math.round(weighted),
+    };
   } catch (e) {
     return { pass: false, message: e.message, value: 0 };
   }
@@ -211,19 +283,25 @@ async function runAllChecks() {
     checkSBIRSource(),
     checkSendGrid(),
     checkBudgetCoverage(),
+    checkSilentScoringFail(),
+    checkStrategyAndIntel(),
+    checkPipelineValue(),
   ]);
 
   const results = [
-    { name: 'Supabase Connection',        ...getResult(checks[0]) },
-    { name: 'Discovery Ran Today',         ...getResult(checks[1]) },
-    { name: 'Scoring Ran Today',           ...getResult(checks[2]) },
-    { name: 'Grant Database Populated',    ...getResult(checks[3]) },
-    { name: 'Grants Scored Today',         ...getResult(checks[4]) },
-    { name: 'No Stuck Grants (>48h new)',  ...getResult(checks[5]) },
-    { name: 'High-Value Pipeline (≥80)',   ...getResult(checks[6]) },
-    { name: 'SBIR Source Active',          ...getResult(checks[7]) },
-    { name: 'SendGrid API Valid',          ...getResult(checks[8]) },
-    { name: 'Budget Data Coverage (≥30%)', ...getResult(checks[9]) },
+    { name: 'Supabase Connection',           ...getResult(checks[0]) },
+    { name: 'Discovery Ran Today',            ...getResult(checks[1]) },
+    { name: 'Scoring Ran Today',              ...getResult(checks[2]) },
+    { name: 'Grant Database Populated',       ...getResult(checks[3]) },
+    { name: 'Grants Scored Today',            ...getResult(checks[4]) },
+    { name: 'No Stuck Grants (>48h new)',     ...getResult(checks[5]) },
+    { name: 'High-Value Pipeline (≥80)',      ...getResult(checks[6]) },
+    { name: 'SBIR Source Active',             ...getResult(checks[7]) },
+    { name: 'SendGrid API Valid',             ...getResult(checks[8]) },
+    { name: 'Budget Data Coverage (≥30%)',    ...getResult(checks[9]) },
+    { name: 'Silent Scoring Fail Check',      ...getResult(checks[10]) },
+    { name: 'Strategy + Intel Agents Active', ...getResult(checks[11]) },
+    { name: 'Pipeline Value > $10K',          ...getResult(checks[12]) },
   ];
 
   const failures = results.filter(r => !r.pass);

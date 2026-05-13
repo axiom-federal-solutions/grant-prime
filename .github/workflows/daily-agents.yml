@@ -1,40 +1,44 @@
 # ============================================================
-# GRANT PRIME — Daily Agent Orchestration
+# GRANT PRIME — Daily Agent Orchestration v2
 # Noble Erne, LLC
 #
-# Full pipeline: Discovery → Scoring → Tests → Alerts →
-#                Deadlines → Health → AutoFix → Treagent
+# Fixed DAG:
+#   Discovery → Enrich → Scoring → Strategy + Intel (parallel)
+#   → Tests → Alerts + Deadlines + Health (parallel)
+#   → AutoFix → Treagent
 #
-# Treagent runs last — sends CEO briefing to treagent1@gmail.com
-# AutoFix retries any failed agents before Treagent reports
+# Key fixes over v1:
+#   - Enrich BEFORE scoring (amounts improve score quality)
+#   - Strategy + Intel agents added after scoring
+#   - Silent-fail detection in AutoFix
+#   - All jobs Node 22 (native WebSocket)
+#   - continue-on-error on non-critical jobs so pipeline doesn't halt
 #
 # Required GitHub Secrets:
-#   SUPABASE_URL           — Supabase project URL
-#   SUPABASE_KEY           — Supabase anon or service key
-#   ANTHROPIC_API_KEY      — Claude Haiku for scoring
-#   SENDGRID_API_KEY       — email delivery
-#   SENDGRID_FROM_EMAIL    — verified sender address
-#   ALERT_EMAIL            — treagent1@gmail.com
+#   SUPABASE_URL, SUPABASE_KEY, ANTHROPIC_API_KEY,
+#   SENDGRID_API_KEY, SENDGRID_FROM_EMAIL, ALERT_EMAIL
 # ============================================================
 
 name: Daily Grant Agents
 
 on:
   schedule:
-    # 12:00 UTC = 7:00 AM CT
-    - cron: '0 12 * * *'
+    - cron: '0 12 * * *'   # 12:00 UTC = 7:00 AM CT
   workflow_dispatch:
     inputs:
       skip_discovery:
-        description: 'Skip discovery'
+        description: 'Skip discovery agent'
         required: false
         default: 'false'
       skip_scoring:
-        description: 'Skip scoring'
+        description: 'Skip scoring agent'
+        required: false
+        default: 'false'
+      skip_strategy:
+        description: 'Skip strategy + intel agents'
         required: false
         default: 'false'
 
-# ── Shared env block ─────────────────────────────────────────
 env:
   SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
   SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
@@ -53,138 +57,156 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: 'npm'
+        with: { node-version: '22', cache: 'npm' }
       - run: npm ci
       - name: Run discovery agent
         run: node agents/grant-discovery-agent.js
         timeout-minutes: 15
 
-  # ── 2. Scoring ─────────────────────────────────────────────
-  scoring:
-    name: "🧠 Scoring"
-    runs-on: ubuntu-latest
-    needs: discovery
-    if: ${{ always() && github.event.inputs.skip_scoring != 'true' }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: 'npm'
-      - run: npm ci
-      - name: Run scoring agent
-        run: node agents/grant-scoring-agent.js
-        timeout-minutes: 30
-
-  # ── 2b. Amount Enricher (parallel with scoring) ──────────
+  # ── 2. Enrich (BEFORE scoring — amounts improve score quality) ─
   enrich:
-    name: "💰 Amounts"
+    name: "💰 Enrich Amounts"
     runs-on: ubuntu-latest
     needs: discovery
     if: always()
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: 'npm'
+        with: { node-version: '22', cache: 'npm' }
       - run: npm ci
       - name: Enrich grant amounts
         run: node agents/grant-amount-enricher.js
         timeout-minutes: 10
         continue-on-error: true
 
-  # ── 3. Test Runner (data integrity validation) ────────────
+  # ── 3. Scoring (after enrich — richer amount data = better scores) ─
+  scoring:
+    name: "🧠 Scoring"
+    runs-on: ubuntu-latest
+    needs: enrich
+    if: ${{ always() && github.event.inputs.skip_scoring != 'true' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22', cache: 'npm' }
+      - run: npm ci
+      - name: Run scoring agent
+        run: node agents/grant-scoring-agent.js
+        timeout-minutes: 30
+
+  # ── 4a. Strategy Agent (AI recommendations — after scoring) ──
+  strategy:
+    name: "🎯 Strategy"
+    runs-on: ubuntu-latest
+    needs: scoring
+    if: ${{ always() && github.event.inputs.skip_strategy != 'true' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22', cache: 'npm' }
+      - run: npm ci
+      - name: Run strategy agent
+        run: node agents/grant-strategy-agent.js
+        timeout-minutes: 10
+        continue-on-error: true
+
+  # ── 4b. Intel Agent (competitive intelligence — parallel) ──
+  intel:
+    name: "🕵️ Intel"
+    runs-on: ubuntu-latest
+    needs: scoring
+    if: ${{ always() && github.event.inputs.skip_strategy != 'true' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22', cache: 'npm' }
+      - run: npm ci
+      - name: Run intel agent
+        run: node agents/grant-intel-agent.js
+        timeout-minutes: 10
+        continue-on-error: true
+
+  # ── 5. Tests (data integrity — after strategy + intel) ───────
   tests:
     name: "🧪 Tests"
     runs-on: ubuntu-latest
-    needs: [scoring, enrich]
+    needs: [strategy, intel]
     if: always()
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: 'npm'
+        with: { node-version: '22', cache: 'npm' }
       - run: npm ci
       - name: Run test runner
         run: node agents/grant-test-runner.js
         timeout-minutes: 5
         continue-on-error: true
 
-  # ── 4a. Alerts (parallel after scoring) ──────────────────
+  # ── 6a. Alerts (parallel after tests) ─────────────────────
   alerts:
     name: "🚨 Alerts"
     runs-on: ubuntu-latest
-    needs: scoring
+    needs: tests
     if: always()
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: 'npm'
+        with: { node-version: '22', cache: 'npm' }
       - run: npm ci
       - name: Run alert agent
         run: node agents/grant-alert-agent.js
         timeout-minutes: 5
+        continue-on-error: true
 
-  # ── 4b. Deadlines (parallel after scoring) ────────────────
+  # ── 6b. Deadlines (parallel after tests) ─────────────────
   deadlines:
     name: "📅 Deadlines"
     runs-on: ubuntu-latest
-    needs: scoring
+    needs: tests
     if: always()
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: 'npm'
+        with: { node-version: '22', cache: 'npm' }
       - run: npm ci
       - name: Run deadline monitor
         run: node agents/grant-deadline-monitor.js
         timeout-minutes: 5
+        continue-on-error: true
 
-  # ── 5. Health Monitor ─────────────────────────────────────
+  # ── 6c. Health Monitor (parallel after tests) ─────────────
   health:
     name: "🏥 Health"
     runs-on: ubuntu-latest
-    needs: [tests, alerts, deadlines]
+    needs: tests
     if: always()
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: 'npm'
+        with: { node-version: '22', cache: 'npm' }
       - run: npm ci
       - name: Run health monitor
         run: node agents/grant-health-monitor.js
         timeout-minutes: 5
         continue-on-error: true
 
-  # ── 6. Auto-Fix (retries anything that failed) ────────────
+  # ── 7. AutoFix (self-healing — catches silent fails too) ──
   autofix:
     name: "🔧 AutoFix"
     runs-on: ubuntu-latest
-    needs: health
+    needs: [alerts, deadlines, health]
     if: always()
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: 'npm'
+        with: { node-version: '22', cache: 'npm' }
       - run: npm ci
       - name: Run autofix agent
         run: node agents/grant-autofix-agent.js
         timeout-minutes: 60
         continue-on-error: true
 
-  # ── 7. Treagent CEO Briefing (always runs last) ───────────
+  # ── 8. Treagent CEO Briefing (always last) ────────────────
   treagent:
     name: "👑 Treagent"
     runs-on: ubuntu-latest
@@ -193,9 +215,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: 'npm'
+        with: { node-version: '22', cache: 'npm' }
       - run: npm ci
       - name: Run Treagent CEO briefing
         run: node agents/treagent.js
