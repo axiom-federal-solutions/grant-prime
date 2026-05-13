@@ -15,6 +15,15 @@
 import 'dotenv/config';
 import { createClient } from '@supabase/supabase-js';
 import fetch from 'node-fetch';
+import { spawn } from 'child_process';
+import { createWriteStream, mkdirSync } from 'fs';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
+
+const __dir = dirname(fileURLToPath(import.meta.url));
+const LOG_DIR = join(__dir, '..', 'logs');
+try { mkdirSync(LOG_DIR, { recursive: true }); } catch {}
+const logFile = createWriteStream(join(LOG_DIR, 'discovery.log'), { flags: 'a' });
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -22,7 +31,11 @@ const supabase = createClient(
 );
 
 // ── Helpers ──────────────────────────────────────────────────
-function log(msg) { console.log(`[${new Date().toISOString()}] ${msg}`); }
+function log(msg) {
+  const line = `[${new Date().toISOString()}] ${msg}`;
+  console.log(line);
+  logFile.write(line + '\n');
+}
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 // Retry fetch up to 3 times with exponential backoff
@@ -46,14 +59,23 @@ async function fetchWithRetry(url, options = {}, retries = 3) {
 }
 
 // Insert grants — skip duplicates using grant_id unique constraint
-// Stamps first_seen_year only on NEW inserts (ignoreDuplicates: true skips existing rows)
+// NOTE: first_seen_year stripped — column not in current schema.
+// Add it via: ALTER TABLE grants ADD COLUMN first_seen_year INTEGER;
+const SCHEMA_FIELDS = [
+  'source','grant_id','title','funder','amount_min','amount_max',
+  'deadline','description','eligibility','naics','apply_url','status',
+];
 async function upsertGrants(grants) {
   if (!grants.length) return 0;
-  const currentYear = new Date().getFullYear();
-  const stamped = grants.map(g => ({ ...g, first_seen_year: g.first_seen_year || currentYear }));
+  // Only send fields that exist in the schema — avoids upsert rejections
+  const clean = grants.map(g => {
+    const out = {};
+    for (const f of SCHEMA_FIELDS) if (g[f] !== undefined) out[f] = g[f];
+    return out;
+  });
   const { data, error } = await supabase
     .from('grants')
-    .upsert(stamped, { onConflict: 'grant_id', ignoreDuplicates: true })
+    .upsert(clean, { onConflict: 'grant_id', ignoreDuplicates: true })
     .select('id');
   if (error) { log(`  Supabase upsert error: ${error.message}`); return 0; }
   return data?.length || 0;
@@ -102,6 +124,11 @@ async function fetchGrantsGovKeywords() {
     'construction grant federal',
     'facilities renovation federal',
     'infrastructure small business',
+    // Subcontracting / teaming
+    'subcontracting plan',
+    'mentor protege program',
+    'small business teaming',
+    'prime contractor small business',
   ];
 
   for (const keyword of keywords) {
@@ -284,26 +311,17 @@ async function fetchFoundationRSS() {
   const results = [];
 
   const feeds = [
+    // ── VERIFIED WORKING FEEDS ────────────────────────────────
     // PND is the gold standard — specifically lists grant RFPs
     {
       name: 'Philanthropy News Digest (RFPs)',
       url: 'https://philanthropynewsdigest.org/rfps.rss',
       source: 'foundation',
     },
-    // WordPress-based foundation sites — reliable RSS
+    // Foundation WordPress feeds — verified active
     {
       name: 'Lumina Foundation',
       url: 'https://www.luminafoundation.org/feed/',
-      source: 'foundation',
-    },
-    {
-      name: 'Ford Foundation',
-      url: 'https://www.fordfoundation.org/news/rss/',
-      source: 'foundation',
-    },
-    {
-      name: 'Annie E. Casey Foundation',
-      url: 'https://www.aecf.org/feed/',
       source: 'foundation',
     },
     {
@@ -312,26 +330,38 @@ async function fetchFoundationRSS() {
       source: 'foundation',
     },
     {
-      name: 'Robert Wood Johnson Foundation',
-      url: 'https://www.rwjf.org/en.rss',
-      source: 'foundation',
-    },
-    // STEM-specific feeds
-    {
-      name: 'Bill & Melinda Gates Foundation',
-      url: 'https://www.gatesfoundation.org/ideas/rss',
-      source: 'foundation',
-    },
-    {
-      name: 'Spencer Foundation (Education R&D)',
-      url: 'https://www.spencer.org/feed',
-      source: 'foundation',
-    },
-    {
       name: 'Simons Foundation (STEM)',
       url: 'https://www.simonsfoundation.org/feed/',
       source: 'foundation',
     },
+    // Additional active sources
+    {
+      name: 'MacArthur Foundation',
+      url: 'https://www.macfound.org/feed/',
+      source: 'foundation',
+    },
+    {
+      name: 'Ewing Marion Kauffman Foundation',
+      url: 'https://www.kauffman.org/feed/',
+      source: 'foundation',
+    },
+    {
+      name: 'Knight Foundation',
+      url: 'https://knightfoundation.org/feed/',
+      source: 'foundation',
+    },
+    {
+      name: 'Rockefeller Foundation',
+      url: 'https://www.rockefellerfoundation.org/feed/',
+      source: 'foundation',
+    },
+    // REMOVED (404 as of 2026-05-12): Joyce Foundation, Walton Family Foundation
+    // ── REMOVED (404 as of 2026-05-12) ───────────────────────
+    // Ford Foundation: https://www.fordfoundation.org/news/rss/
+    // Annie E. Casey: https://www.aecf.org/feed/
+    // Robert Wood Johnson: https://www.rwjf.org/en.rss
+    // Gates Foundation: https://www.gatesfoundation.org/ideas/rss
+    // Spencer Foundation: https://www.spencer.org/feed
   ];
 
   for (const feed of feeds) {
@@ -492,7 +522,8 @@ async function fetchSBIR() {
     try {
       const res = await fetchWithRetry(
         `https://api.sbir.gov/public/api/solicitations?keyword=${encodeURIComponent(topic)}&rows=15&start=0&open=true`,
-        { headers: { 'Accept': 'application/json' } }
+        { headers: { 'Accept': 'application/json' } },
+        1  // single attempt — SBIR API is intermittently unreachable; skip fast
       );
       const json = await res.json();
       const items = json?.response?.docs || json?.docs || [];
@@ -584,7 +615,10 @@ async function fetchNIH() {
 // Drop grants explicitly restricted to entity types Noble Erne
 // and Walker Contractors cannot be: state govts, tribal govts,
 // large universities (unless SBIR-eligible). Cuts noise ~40%.
-const INELIGIBLE_TYPES = [
+// These applicant type codes/strings appear in Grants.gov eligibility when ONLY
+// government/institutional entities can apply. If a grant lists ONLY these with
+// no small business / private / nonprofit language, it's ineligible.
+const INELIGIBLE_PATTERNS = [
   'state governments',
   'county governments',
   'city or township governments',
@@ -593,17 +627,47 @@ const INELIGIBLE_TYPES = [
   'native american tribal organizations',
   'public and state controlled institutions',
   'independent school districts',
+  // Grants.gov applicant type codes (numeric)
+  '01 ', // State Government
+  '02 ', // County Government
+  '04 ', // Special District
+  '05 ', // Independent School District
+  '06 ', // Public/State Controlled Institution of Higher Education
+  '20 ', // Tribal Government (Federally Recognized)
+];
+
+const ELIGIBLE_SIGNALS = [
+  'small business',
+  'private',
+  'nonprofit',
+  'non-profit',
+  'for-profit',
+  'commercial',
+  'llc',
+  'corporation',
+  'company',
+  'individual',
+  'unrestricted',
+  'others',
+  'for profit',
+  '23 ', // For-Profit (Non-Small Business)
+  '12 ', // Other Than Institution of Higher Education
+  '25 ', // Nonprofits
 ];
 
 function isEligible(grant) {
-  if (!grant.eligibility) return true; // no info → keep
+  if (!grant.eligibility) return true; // no restriction stated → keep
+
   const elig = grant.eligibility.toLowerCase();
-  // If eligibility ONLY lists government/tribal types and not "small business" or "private", drop it
-  const hasGovOnly = INELIGIBLE_TYPES.some(t => elig.includes(t));
-  const hasSmallBiz = /small business|private|nonprofit|for-profit|commercial|llc|corporation|company/.test(elig);
-  // Keep if small biz language present, or if no ineligible type detected
-  if (hasGovOnly && !hasSmallBiz) return false;
-  return true;
+
+  // If eligibility text explicitly says small biz / private / for-profit → always keep
+  if (ELIGIBLE_SIGNALS.some(s => elig.includes(s))) return true;
+
+  // If ONLY ineligible types are listed, drop it
+  const hasIneligible = INELIGIBLE_PATTERNS.some(p => elig.includes(p));
+  if (hasIneligible) return false;
+
+  return true; // default: keep
 }
 
 // ── Write system log to Supabase ──────────────────────────────
@@ -697,6 +761,27 @@ async function main() {
   });
 
   log(`=== Discovery Complete: ${totalNew} new grants added to Supabase ===`);
+
+  // ── Auto-chain: run scoring agent on newly discovered grants ─
+  if (totalNew > 0) {
+    log(`Auto-running scoring agent on ${totalNew} new grants...`);
+    await new Promise((resolve) => {
+      const scorer = spawn('node', ['agents/grant-scoring-agent.js'], {
+        stdio: 'inherit',
+        env: process.env,
+      });
+      scorer.on('close', (code) => {
+        log(`Scoring agent exited (code ${code})`);
+        resolve();
+      });
+      scorer.on('error', (err) => {
+        log(`Scoring agent launch error: ${err.message}`);
+        resolve();
+      });
+    });
+  } else {
+    log('No new grants — scoring agent skipped.');
+  }
 }
 
 main().catch(err => {

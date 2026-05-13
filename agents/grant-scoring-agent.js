@@ -19,6 +19,15 @@
 import 'dotenv/config';
 import Anthropic from '@anthropic-ai/sdk';
 import { createClient } from '@supabase/supabase-js';
+import sgMail from '@sendgrid/mail';
+import { createWriteStream, mkdirSync } from 'fs';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
+
+const __dir = dirname(fileURLToPath(import.meta.url));
+const LOG_DIR = join(__dir, '..', 'logs');
+try { mkdirSync(LOG_DIR, { recursive: true }); } catch {}
+const logFile = createWriteStream(join(LOG_DIR, 'scoring.log'), { flags: 'a' });
 
 // ── Connections ──────────────────────────────────────────────
 const supabase = createClient(
@@ -29,6 +38,10 @@ const supabase = createClient(
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
+
+sgMail.setApiKey(process.env.SENDGRID_API_KEY || '');
+const ALERT_EMAIL = process.env.ALERT_EMAIL || 'treagent1@gmail.com';
+const FROM_EMAIL  = process.env.SENDGRID_FROM_EMAIL || 'treagent1@gmail.com';
 
 // ── Company Profiles ─────────────────────────────────────────
 // Two affiliated entities under Noble Erne, LLC / Axiom Federal Solutions.
@@ -86,7 +99,9 @@ Best fit: VA construction/renovation grants, DOD facilities programs, veteran en
 
 // ── Helpers ──────────────────────────────────────────────────
 function log(msg) {
-  console.log(`[${new Date().toISOString()}] ${msg}`);
+  const line = `[${new Date().toISOString()}] ${msg}`;
+  console.log(line);
+  logFile.write(line + '\n');
 }
 
 function sleep(ms) {
@@ -134,8 +149,11 @@ AUTOMATIC HIGH SCORES — Noble Erne (Ed/Tech):
 AUTOMATIC HIGH SCORES — Noble Erne (STEM):
 - Any grant mentioning: "STEM", "computer science education", "coding", "robotics", "cybersecurity education", "data science", "science and technology", "STEM workforce", "broadening participation", "NSF", "NIH education", "STEM after school" → Noble Erne scores 80+ (entity: "Noble Erne", label it STEM in reason)
 
+SUBCONTRACTING OPPORTUNITIES — BOTH entities:
+- Any grant/contract mentioning: "subcontracting plan", "mentor protege", "small business teaming", "prime contractor", "subcontract", "teaming agreement" → use entity "Both" and score 75+ if either entity has relevant NAICS. Note "Subcontracting opportunity" in reason.
+
 Return a JSON array ONLY — no markdown, no explanation outside the array.
-Format: [{"id": "<grant_uuid>", "score": <0-100>, "entity": "<Noble Erne|Walker Contractors|Both>", "category": "<EdTech|STEM|Construction|Foundation|Federal>", "reason": "<one sentence max 120 chars>"}]
+Format: [{"id": "<grant_uuid>", "score": <0-100>, "entity": "<Noble Erne|Walker Contractors|Both>", "category": "<EdTech|STEM|Construction|Foundation|Federal|Subcontract>", "reason": "<one sentence max 120 chars>"}]
 
 Category rules:
 - "STEM" if the grant is science/technology/engineering/math R&D, computer science education, robotics, NSF/NIH funded
@@ -174,16 +192,17 @@ async function updateScores(scores) {
   let updated = 0;
 
   for (const item of scores) {
-    // Write entity_fit and category as dedicated fields for dashboard filtering
-    const entityLabel = item.entity ? `[${item.entity}] ` : '';
+    // Encode entity + category into notes — category column not in current schema.
+    // To add it: ALTER TABLE grants ADD COLUMN category TEXT;
+    const entityLabel = item.entity   ? `[${item.entity}] `   : '';
+    const catLabel    = item.category ? `[${item.category}] ` : '';
     const { error } = await supabase
       .from('grants')
       .update({
-        score: item.score,
+        score:      item.score,
         entity_fit: item.entity || 'Noble Erne',
-        category: item.category || 'Federal',
-        notes: `${entityLabel}${item.reason || ''}`,
-        status: 'scored',
+        notes:      `${entityLabel}${catLabel}${item.reason || ''}`,
+        status:     'scored',
       })
       .eq('id', item.id);
 
@@ -227,6 +246,7 @@ async function main() {
   // Process in batches of 20 (Haiku handles this well, stays cheap)
   const batchSize = 20;
   let totalUpdated = 0;
+  let totalHighScore = 0;
 
   for (let i = 0; i < grants.length; i += batchSize) {
     const batch = grants.slice(i, i + batchSize);
@@ -236,6 +256,7 @@ async function main() {
     log(`Scoring batch ${batchNum}/${totalBatches} (${batch.length} grants)...`);
 
     const scores = await scoreBatch(batch);
+    totalHighScore += scores.filter(s => s.score >= 80).length;
     const updated = await updateScores(scores);
     totalUpdated += updated;
 
@@ -249,19 +270,93 @@ async function main() {
 
   log(`=== Scoring Complete: ${totalUpdated}/${grants.length} grants scored ===`);
 
-  // Write run summary to system_log for dashboard daily briefing
+  // ── Write run summary to system_log ──────────────────────
   try {
-    const highScore = grants.filter(g => g._scored_score >= 80).length; // approximate
     await supabase.from('system_log').insert({
       agent: 'grant-scoring-agent',
       run_at: new Date().toISOString(),
       status: 'success',
       grants_found: grants.length,
       grants_added: totalUpdated,
-      details: JSON.stringify({ total_scored: totalUpdated, batches: Math.ceil(grants.length / 20) }),
+      details: JSON.stringify({
+        total_scored: totalUpdated,
+        high_score_count: totalHighScore,
+        batches: Math.ceil(grants.length / 20),
+      }),
     });
+    log('System log written to Supabase');
   } catch (err) {
     log(`System log write failed (non-fatal): ${err.message}`);
+  }
+
+  // ── Scoring completion email digest ──────────────────────
+  if (process.env.SENDGRID_API_KEY && totalUpdated > 0) {
+    try {
+      // Pull top 10 high-scoring grants for the digest
+      const { data: topGrants } = await supabase
+        .from('grants')
+        .select('title, funder, score, entity_fit, deadline, apply_url')
+        .eq('status', 'scored')
+        .gte('score', 75)
+        .order('score', { ascending: false })
+        .limit(10);
+
+      const rows = (topGrants || []).map(g => `
+        <tr>
+          <td style="padding:8px 10px;border-bottom:1px solid #1a2540;font-size:12px;color:#EDF0F7">${g.title?.slice(0, 60)}${g.title?.length > 60 ? '…' : ''}</td>
+          <td style="padding:8px 10px;border-bottom:1px solid #1a2540;font-size:12px;color:#8B95AB">${g.funder || '—'}</td>
+          <td style="padding:8px 10px;border-bottom:1px solid #1a2540;font-size:12px;text-align:center;font-weight:800;color:${g.score >= 85 ? '#34D399' : g.score >= 75 ? '#E9C46A' : '#F59E0B'}">${g.score}</td>
+          <td style="padding:8px 10px;border-bottom:1px solid #1a2540;font-size:11px;color:#8B95AB">${g.deadline || '—'}</td>
+        </tr>`).join('');
+
+      const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"></head>
+<body style="margin:0;padding:0;background:#06080F;font-family:'Segoe UI',Arial,sans-serif;">
+<div style="max-width:700px;margin:0 auto;padding:24px 16px;">
+  <div style="background:#0B0F1A;border:1px solid rgba(52,211,153,.25);border-radius:12px;padding:20px 24px;margin-bottom:20px;">
+    <div style="font-size:10px;color:#34D399;font-weight:700;letter-spacing:.12em;text-transform:uppercase;margin-bottom:6px">GRANT PRIME · Scoring Complete</div>
+    <div style="font-size:20px;font-weight:800;color:#EDF0F7">Daily Scoring Report</div>
+    <div style="font-size:13px;color:#8B95AB;margin-top:4px">${new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'})}</div>
+  </div>
+  <div style="display:flex;gap:12px;margin-bottom:20px">
+    <div style="flex:1;background:#0F1424;border:1px solid rgba(255,255,255,.06);border-radius:8px;padding:16px;text-align:center">
+      <div style="font-size:28px;font-weight:800;color:#34D399">${totalUpdated}</div>
+      <div style="font-size:10px;color:#8B95AB;text-transform:uppercase;letter-spacing:.1em">Grants Scored</div>
+    </div>
+    <div style="flex:1;background:#0F1424;border:1px solid rgba(255,255,255,.06);border-radius:8px;padding:16px;text-align:center">
+      <div style="font-size:28px;font-weight:800;color:#E9C46A">${totalHighScore}</div>
+      <div style="font-size:10px;color:#8B95AB;text-transform:uppercase;letter-spacing:.1em">Score 80+</div>
+    </div>
+  </div>
+  ${rows ? `<div style="background:#0F1424;border:1px solid rgba(255,255,255,.06);border-radius:8px;overflow:hidden;margin-bottom:20px">
+    <div style="padding:12px 16px;font-size:10px;color:#4D5669;font-weight:700;letter-spacing:.1em;text-transform:uppercase;border-bottom:1px solid rgba(255,255,255,.06)">Top Opportunities (Score 75+)</div>
+    <table style="width:100%;border-collapse:collapse">
+      <thead><tr style="background:#0B0F1A">
+        <th style="padding:8px 10px;text-align:left;font-size:10px;color:#4D5669;font-weight:700;text-transform:uppercase">Grant</th>
+        <th style="padding:8px 10px;text-align:left;font-size:10px;color:#4D5669;font-weight:700;text-transform:uppercase">Funder</th>
+        <th style="padding:8px 10px;text-align:center;font-size:10px;color:#4D5669;font-weight:700;text-transform:uppercase">Score</th>
+        <th style="padding:8px 10px;text-align:left;font-size:10px;color:#4D5669;font-weight:700;text-transform:uppercase">Deadline</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  </div>` : ''}
+  <div style="text-align:center;margin-top:16px">
+    <a href="https://axiom-federal-solutions.github.io/grant-prime/" style="background:#34D399;color:#06080F;font-weight:700;font-size:12px;padding:12px 28px;border-radius:6px;text-decoration:none;display:inline-block">OPEN GRANT PRIME DASHBOARD</a>
+  </div>
+  <div style="margin-top:14px;padding:12px;background:#0B0F1A;border-radius:8px;font-size:10px;color:#4D5669;text-align:center">
+    GRANT PRIME · Noble Erne, LLC · Automated by Claude Haiku
+  </div>
+</div></body></html>`;
+
+      await sgMail.send({
+        to: ALERT_EMAIL,
+        from: FROM_EMAIL,
+        subject: `GRANT PRIME: ${totalUpdated} grants scored — ${totalHighScore} high-priority`,
+        html,
+      });
+      log(`Scoring digest emailed to ${ALERT_EMAIL}`);
+    } catch (emailErr) {
+      log(`Scoring email failed (non-fatal): ${emailErr.message}`);
+    }
   }
 }
 

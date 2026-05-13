@@ -8,6 +8,7 @@ on:
 jobs:
   discover:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v3
 
@@ -33,6 +34,17 @@ jobs:
 
       - name: Notify on failure
         if: failure()
+        env:
+          SENDGRID_API_KEY: ${{ secrets.SENDGRID_API_KEY }}
+          SENDGRID_FROM_EMAIL: ${{ secrets.SENDGRID_FROM_EMAIL }}
+          ALERT_EMAIL: ${{ secrets.ALERT_EMAIL }}
         run: |
-          echo "Discovery agent failed on run ${{ github.run_id }}"
-          echo "Check logs: https://github.com/axiom-federal-solutions/grant-prime/actions/runs/${{ github.run_id }}"
+          curl -s --request POST --url 'https://api.sendgrid.com/v3/mail/send' \
+            --header "Authorization: Bearer $SENDGRID_API_KEY" \
+            --header 'Content-Type: application/json' \
+            --data "{
+              \"personalizations\":[{\"to\":[{\"email\":\"$ALERT_EMAIL\"}]}],
+              \"from\":{\"email\":\"$SENDGRID_FROM_EMAIL\"},
+              \"subject\":\"⚠️ GRANT PRIME: Discovery/Scoring agent FAILED\",
+              \"content\":[{\"type\":\"text/plain\",\"value\":\"Discovery or Scoring agent failed.\\nRun: ${{ github.run_id }}\\nLogs: https://github.com/axiom-federal-solutions/grant-prime/actions/runs/${{ github.run_id }}\"}]
+            }"

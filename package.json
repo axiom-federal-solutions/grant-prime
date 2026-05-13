@@ -5,11 +5,13 @@
   "type": "module",
   "main": "index.js",
   "scripts": {
+    "setup":     "node setup.js",
+    "server":    "node server.js",
     "discovery": "node agents/grant-discovery-agent.js",
-    "scoring": "node agents/grant-scoring-agent.js",
-    "alert": "node agents/grant-alert-agent.js",
+    "scoring":   "node agents/grant-scoring-agent.js",
+    "alert":     "node agents/grant-alert-agent.js",
     "deadlines": "node agents/grant-deadline-monitor.js",
-    "proposal": "node agents/grant-proposal-agent.js"
+    "proposal":  "node agents/grant-proposal-agent.js"
   },
   "engines": {
     "node": ">=18"
