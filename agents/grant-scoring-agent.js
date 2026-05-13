@@ -43,18 +43,17 @@ sgMail.setApiKey(process.env.SENDGRID_API_KEY || '');
 const ALERT_EMAIL = process.env.ALERT_EMAIL || 'treagent1@gmail.com';
 const FROM_EMAIL  = process.env.SENDGRID_FROM_EMAIL || 'treagent1@gmail.com';
 
-// ── Company Profiles ─────────────────────────────────────────
-// Two affiliated entities under Noble Erne, LLC / Axiom Federal Solutions.
-// Walker Contractors LLC is SDVOSB-certified — eligible for veteran
-// set-asides, VA contracts, DOD small business programs, and SBA set-asides.
+// ── Partner Profiles ─────────────────────────────────────────
+// Three equal partners in the Grant PRIME consortium.
+// Entity 2 is SDVOSB-certified. Entity 3 focuses on urban STEM education.
 //
 // NAICS codes sourced from IQE PRIME config/settings.json and scout-state.js
 const COMPANY_PROFILES = `
-ENTITY 1 — Noble Erne, LLC (Ed / Tech category)
+ENTITY 1 — IT & EdTech Partner (Ed / Tech category)
 Type: IT consulting firm, LLC, small business, can prime or sub
 Primary capabilities: SAP implementation & upgrades, Instructional Design, Software Administration, Training Program Management, eLearning (SCORM/xAPI), LMS administration
 Industries: Technology, Oil & Gas, Retail, Government/Military, Finance & Banking, Manufacturing & Industrial, EdTech, Workforce Development
-NAICS codes (Noble Erne — Ed/Tech):
+NAICS codes (Entity 1 — Ed/Tech):
   541511 — Custom Computer Programming Services
   541512 — Computer Systems Design Services
   541519 — Other Computer Related Services (SAP/ERP admin)
@@ -66,24 +65,12 @@ NAICS codes (Noble Erne — Ed/Tech):
   611710 — Educational Support Services
 Best fit: workforce development grants, IT training funding, SAP/ERP technology programs, EdTech initiatives, capacity building, employee training programs, instructional design contracts
 
-ENTITY 1B — Noble Erne, LLC (STEM category — overlapping)
-Noble Erne can also pursue STEM-adjacent grants where technology training, computer science education, or IT capacity building is the primary focus.
-NAICS codes (STEM overlap):
-  541715 — Research and Development in the Physical, Engineering, and Life Sciences
-  541720 — Research and Development in the Social Sciences and Humanities
-  611310 — Colleges, Universities and Professional Schools (partnership grants)
-  611519 — Other Technical and Trade Schools
-  611420 — Computer Training (STEM education pathway)
-  334111 — Electronic Computer Manufacturing (deep STEM)
-  519130 — Internet Publishing and Broadcasting (EdTech/STEM platform)
-Best fit: STEM workforce pipeline grants, computer science education funding, coding bootcamp support, data science training, STEM teacher development, NSF/NIH education supplements
-
-ENTITY 2 — Walker Contractors LLC (DBA: Axiom Federal Solutions)
+ENTITY 2 — Construction & Federal Contractor (SDVOSB certified)
 Type: Construction/renovation/facilities firm, SDVOSB certified, VOSB eligible, small business
 Certifications: SDVOSB (Service-Disabled Veteran-Owned Small Business), VOSB (Veteran-Owned Small Business)
 Industries: federal construction, commercial renovation, infrastructure, facilities maintenance, janitorial/supply, government renovation
 Geography: HQ Dallas TX — targets TX, OK, LA, AR, NM, CO, KS, MO
-NAICS codes (Walker Contractors):
+NAICS codes (Entity 2):
   236220 — Commercial and Institutional Building Construction (PRIMARY)
   238210 — Electrical Contractors and Other Wiring Installation
   237990 — Other Heavy and Civil Engineering Construction
@@ -95,6 +82,22 @@ NAICS codes (Walker Contractors):
   424120 — Stationery and Office Supplies Merchant Wholesalers
   424410 — General Line Grocery Merchant Wholesalers (Food/Beverage supply)
 Best fit: VA construction/renovation grants, DOD facilities programs, veteran entrepreneurship funding, SBA SDVOSB set-asides, federal construction, infrastructure grants, HUBZone programs, supply chain grants
+
+ENTITY 3 — STEM Education Partner (STEM / Urban Youth category) [EQUAL PARTNER]
+Type: STEM education organization, small business, Houston TX
+Primary capabilities: K-12 STEM curriculum delivery, rocketry & aerospace education, STEM boot camps, educator professional development, STAAR/EOC academic preparation, college & career readiness, workforce pipeline for underrepresented minorities, Parent Academy programs
+Focus: Science, Technology, Engineering & Mathematics with an Urban Perspective — serves underrepresented minority youth in Houston TX area
+Programs: Saturday STEM Boot Camp, Rocketry program, Winter Internship, Parent Academy, after-school STEM enrichment
+Target population: K-12 students in underserved/urban communities, underrepresented minorities, Title I school populations
+NAICS codes (Entity 3 — STEM Education):
+  611110 — Elementary and Secondary Schools (K-12 programs)
+  611519 — Other Technical and Trade Schools (boot camps, specialty STEM)
+  611710 — Educational Support Services (tutoring, enrichment, STAAR prep)
+  611699 — All Other Miscellaneous Schools and Instruction (rocketry, camps)
+  611430 — Professional and Management Development Training (educator PD)
+  541715 — Research and Development in Physical, Engineering, Life Sciences
+  611310 — Colleges/Universities (partnership grants with higher ed institutions)
+Best fit: NSF education grants, NASA STEM education supplements, DOE workforce diversity grants, HHS youth development programs, Title I supplemental education, broadening participation in STEM, urban youth STEM programs, rocketry & aerospace education, STEM educator professional development, community foundation education grants, minority-serving institution partnerships, after-school enrichment funding, STEM pipeline grants for underrepresented groups
 `;
 
 // ── Helpers ──────────────────────────────────────────────────
@@ -123,14 +126,15 @@ Grant ${i + 1}:
   Eligibility: ${(g.eligibility || '').slice(0, 200)}
 `).join('\n---\n');
 
-  const prompt = `You are scoring grant opportunities for two affiliated companies. Score each grant for BOTH entities and return the HIGHEST score.
+  const prompt = `You are scoring grant opportunities for THREE equal partner organizations. Score each grant for ALL entities and return the HIGHEST scoring entity.
 
-Company Profiles:
+Partner Profiles:
 ${COMPANY_PROFILES}
 
 NAICS MATCHING RULES (apply these first before reading description):
-- If the grant lists a NAICS code matching Noble Erne's codes (541511, 541512, 541519, 541611, 541618, 611430) → Noble Erne scores 85+
-- If the grant lists a NAICS code matching Walker's codes (236220, 238210, 237990, 236116, 561730, 424710, 424130, 424490, 424120, 424410) → Walker scores 85+
+- If the grant lists a NAICS code matching Entity 1 codes (541511, 541512, 541519, 541611, 541618, 611430, 611420, 611710) → Entity 1 scores 85+
+- If the grant lists a NAICS code matching Entity 2 codes (236220, 238210, 237990, 236116, 561730, 424710, 424130, 424490, 424120, 424410) → Entity 2 scores 85+
+- If the grant lists a NAICS code matching Entity 3 codes (611110, 611519, 611710, 611699, 611430, 541715, 611310) → Entity 3 scores 85+
 - If no NAICS listed, score based on description keywords and industry fit
 
 SCORING GUIDE:
@@ -139,18 +143,26 @@ SCORING GUIDE:
 - 50–79: Partial match — some overlap with capabilities
 - 0–49: Poor fit — wrong industry, wrong entity type, or ineligible
 
-AUTOMATIC HIGH SCORES — Walker Contractors:
-- Any grant mentioning: "veteran", "SDVOSB", "VOSB", "service-disabled veteran", "veteran-owned", "veteran set-aside", "veteran contractor", "VA construction", "veteran entrepreneur" → Walker scores 88+
-- Any construction, renovation, facilities, or infrastructure grant → Walker scores 75+
+AUTOMATIC HIGH SCORES — Entity 2 (Construction/SDVOSB):
+- Any grant mentioning: "veteran", "SDVOSB", "VOSB", "service-disabled veteran", "veteran-owned", "veteran set-aside", "veteran contractor", "VA construction", "veteran entrepreneur" → Entity 2 scores 88+
+- Any construction, renovation, facilities, or infrastructure grant → Entity 2 scores 75+
 
-AUTOMATIC HIGH SCORES — Noble Erne (Ed/Tech):
-- Any grant mentioning: "workforce development", "instructional design", "SAP", "ERP", "IT training", "software training", "eLearning", "EdTech", "technology training", "employee training", "LMS", "curriculum development", "professional development" → Noble Erne scores 85+
+AUTOMATIC HIGH SCORES — Entity 1 (IT & EdTech):
+- Any grant mentioning: "workforce development", "instructional design", "SAP", "ERP", "IT training", "software training", "eLearning", "EdTech", "technology training", "employee training", "LMS", "curriculum development", "professional development", "computer training" → Entity 1 scores 85+
 
-AUTOMATIC HIGH SCORES — Noble Erne (STEM):
-- Any grant mentioning: "STEM", "computer science education", "coding", "robotics", "cybersecurity education", "data science", "science and technology", "STEM workforce", "broadening participation", "NSF", "NIH education", "STEM after school" → Noble Erne scores 80+ (entity: "Noble Erne", label it STEM in reason)
+AUTOMATIC HIGH SCORES — Entity 3 (STEM Education / Urban Youth) — SCORE THIS ENTITY FOR ALL STEM AND EDUCATION GRANTS:
+- Any grant mentioning: "STEM education", "K-12 STEM", "after school STEM", "STEM boot camp", "rocketry", "aerospace education", "NASA education", "broadening participation", "underrepresented minorities in STEM", "urban youth", "underserved communities", "Title I", "STEM pipeline", "STEM workforce pipeline", "youth STEM", "STEM enrichment", "STEM camp" → Entity 3 scores 88+
+- Any grant mentioning: "STEM", "science education", "math education", "engineering education", "computer science education", "coding for youth", "robotics education", "cybersecurity education for youth", "NSF education", "minority-serving", "HBCUs", "community STEM" → Entity 3 scores 82+
+- Any grant mentioning: "educator professional development", "teacher training in STEM", "STAAR", "college readiness", "career readiness for underserved", "parent engagement in education", "community education", "supplemental education" → Entity 3 scores 80+
+- Any grant for: NSF, NASA, DOE STEM programs, HHS youth development, after-school programs → Entity 3 scores 78+
 
-SUBCONTRACTING OPPORTUNITIES — BOTH entities:
-- Any grant/contract mentioning: "subcontracting plan", "mentor protege", "small business teaming", "prime contractor", "subcontract", "teaming agreement" → use entity "Both" and score 75+ if either entity has relevant NAICS. Note "Subcontracting opportunity" in reason.
+SUBCONTRACTING OPPORTUNITIES — ALL entities:
+- Any grant/contract mentioning: "subcontracting plan", "mentor protege", "small business teaming", "prime contractor", "subcontract", "teaming agreement" → use entity "All Partners" and score 75+ if any entity has relevant NAICS. Note "Subcontracting opportunity" in reason.
+
+PARTNERSHIP OPPORTUNITIES — when 2+ entities qualify:
+- If Entity 1 AND Entity 3 both qualify (e.g., EdTech + STEM education): entity = "EdTech + STEM Partners", score highest of the two
+- If Entity 1 AND Entity 2 both qualify: entity = "IT + Construction Partners", score highest
+- If all three qualify: entity = "All Partners"
 
 COMPLEXITY RATING (estimate application effort):
 - "Easy": <10 pages, no cost-share, no audit, single form, <1 week to complete
@@ -158,11 +170,11 @@ COMPLEXITY RATING (estimate application effort):
 - "Intensive": 30+ pages, cost-share required, multi-year reporting, federal audit, SAM/UEI required, 3+ weeks
 
 Return a JSON array ONLY — no markdown, no explanation outside the array.
-Format: [{"id": "<grant_uuid>", "score": <0-100>, "entity": "<Noble Erne|Walker Contractors|Both>", "category": "<EdTech|STEM|Construction|Foundation|Federal|Subcontract>", "complexity": "<Easy|Moderate|Intensive>", "reason": "<one sentence max 120 chars>"}]
+Format: [{"id": "<grant_uuid>", "score": <0-100>, "entity": "<IT & EdTech Partner|Construction Partner|STEM Education Partner|EdTech + STEM Partners|IT + Construction Partners|All Partners>", "category": "<EdTech|STEM|Construction|Foundation|Federal|Subcontract>", "complexity": "<Easy|Moderate|Intensive>", "reason": "<one sentence max 120 chars>"}]
 
 Category rules:
-- "STEM" if the grant is science/technology/engineering/math R&D, computer science education, robotics, NSF/NIH funded
-- "EdTech" if the grant is training, instructional design, workforce development, SAP/ERP, LMS, curriculum
+- "STEM" if the grant is science/technology/engineering/math education, rocketry, robotics, NSF/NIH funded, K-12 STEM, broadening participation, urban youth STEM
+- "EdTech" if the grant is IT training, instructional design, workforce development, SAP/ERP, LMS, curriculum development, professional development for adults
 - "Construction" if the grant is building, renovation, facilities, infrastructure, SDVOSB/veteran construction
 - "Foundation" if the grant comes from a private foundation (non-government)
 - "Federal" for all other federal government grants that don't fit the above
@@ -214,7 +226,7 @@ async function updateScores(scores) {
       .from('grants')
       .update({
         score:      item.score,
-        entity_fit: item.entity || 'Noble Erne',
+        entity_fit: item.entity || 'IT & EdTech Partner',
         notes:      `${entityLabel}${catLabel}${complexityLabel}${item.reason || ''}`,
         status:     'scored',
       })

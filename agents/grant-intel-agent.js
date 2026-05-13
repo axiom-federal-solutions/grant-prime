@@ -43,10 +43,12 @@ async function safeFetch(url, options = {}) {
   }
 }
 
-// ── Noble Erne NAICS codes ──────────────────────────────────
+// ── Entity 1 (IT/EdTech Partner) NAICS codes ─────────────────
 const NOBLE_NAICS = ['541511','541512','541519','541611','541618','611430','611420','611699','611710'];
-// ── Walker NAICS codes ──────────────────────────────────────
+// ── Entity 2 (Construction/SDVOSB Partner) NAICS codes ───────
 const WALKER_NAICS = ['236220','238210','237990','236116','561730'];
+// ── Entity 3 (STEM Education Partner) NAICS codes ────────────
+const STEM_NAICS = ['611110','611519','611710','611699','611430','541715','611310'];
 
 // ── Target states ────────────────────────────────────────────
 const TARGET_STATES = ['TX','LA','VA','FL','OK'];
@@ -153,11 +155,18 @@ async function getSourceCoverage() {
 async function getUnusedCategories() {
   // Check which of our target categories have 0 high-scoring grants
   const targets = [
-    { label: 'DOE Workforce', keywords: ['DOE','Department of Energy','energy workforce'] },
-    { label: 'HHS/HRSA', keywords: ['HHS','HRSA','health workforce'] },
+    // Entity 1 — IT/EdTech Partner gaps
+    { label: 'DOE Workforce Development', keywords: ['DOE','Department of Energy','energy workforce'] },
+    { label: 'HHS/HRSA Health IT', keywords: ['HHS','HRSA','health workforce','health IT'] },
     { label: 'SBA SBIR/STTR', keywords: ['SBIR','STTR','small business innovation'] },
-    { label: 'NSF Education', keywords: ['NSF','National Science Foundation'] },
+    // Entity 2 — Construction/SDVOSB gaps
     { label: 'Veteran Entrepreneurship', keywords: ['veteran entrepreneur','veteran business','veteran-owned startup'] },
+    { label: 'HUBZone Construction', keywords: ['HUBZone','hub zone','historically underutilized'] },
+    // Entity 3 — STEM Education Partner gaps
+    { label: 'NSF Broadening Participation', keywords: ['NSF','National Science Foundation','broadening participation'] },
+    { label: 'NASA STEM Education', keywords: ['NASA','aerospace education','rocketry education'] },
+    { label: 'K-12 Urban STEM Programs', keywords: ['urban STEM','K-12 STEM','underrepresented youth STEM','after school STEM'] },
+    { label: 'Title I STEM Enrichment', keywords: ['Title I','Title 1','underserved school','low-income school'] },
     { label: 'Community Development', keywords: ['CDFI','community development','community investment'] },
   ];
 
@@ -183,12 +192,16 @@ async function main() {
     log('ERROR: Missing SUPABASE_URL/KEY'); process.exit(1);
   }
 
-  log('Querying USASpending.gov for Noble Erne NAICS awards...');
-  const nobleIntel = await fetchUSASpendingAwards(NOBLE_NAICS, 'Noble Erne');
+  log('Querying USASpending.gov for IT/EdTech Partner NAICS awards...');
+  const nobleIntel = await fetchUSASpendingAwards(NOBLE_NAICS, 'IT/EdTech Partner');
   await sleep(1500);
 
-  log('Querying USASpending.gov for Walker Contractors NAICS awards...');
-  const walkerIntel = await fetchUSASpendingAwards(WALKER_NAICS, 'Walker Contractors');
+  log('Querying USASpending.gov for Construction Partner NAICS awards...');
+  const walkerIntel = await fetchUSASpendingAwards(WALKER_NAICS, 'Construction Partner');
+  await sleep(1500);
+
+  log('Querying USASpending.gov for STEM Education Partner NAICS awards...');
+  const stemIntel = await fetchUSASpendingAwards(STEM_NAICS, 'STEM Education Partner');
   await sleep(1500);
 
   log('Checking Grants.gov for new postings (48h)...');
@@ -202,17 +215,20 @@ async function main() {
 
   const intel = {
     generatedAt: new Date().toISOString(),
-    nobleErneSector: nobleIntel,
-    walkerSector: walkerIntel,
+    nobleErneSector: nobleIntel,     // IT/EdTech Partner
+    walkerSector: walkerIntel,       // Construction Partner
+    stemSector: stemIntel,           // STEM Education Partner
     recentGrantsGovPostings: newPostings,
     dbCoverage: coverage,
     fundingGaps: gaps,
     summary: {
       nobleAvgAward: nobleIntel.avgAmt,
       walkerAvgAward: walkerIntel.avgAmt,
+      stemAvgAward: stemIntel.avgAmt,
       nobleTopAgency: nobleIntel.topAgencies[0]?.name || 'N/A',
       walkerTopAgency: walkerIntel.topAgencies[0]?.name || 'N/A',
-      targetStateHits: nobleIntel.targetStateAwards + walkerIntel.targetStateAwards,
+      stemTopAgency: stemIntel.topAgencies[0]?.name || 'N/A',
+      targetStateHits: nobleIntel.targetStateAwards + walkerIntel.targetStateAwards + stemIntel.targetStateAwards,
       gapCount: gaps.length,
       newGrantsGovToday: newPostings.length,
     },
@@ -223,7 +239,7 @@ async function main() {
       agent: 'grant-intel-agent',
       run_at: new Date().toISOString(),
       status: 'success',
-      grants_found: (nobleIntel.awards?.length||0) + (walkerIntel.awards?.length||0),
+      grants_found: (nobleIntel.awards?.length||0) + (walkerIntel.awards?.length||0) + (stemIntel.awards?.length||0),
       grants_added: newPostings.length,
       details: JSON.stringify(intel),
     });
@@ -232,7 +248,8 @@ async function main() {
     log(`system_log write failed: ${err.message}`);
   }
 
-  log(`=== Intel Agent Complete: Noble avg $${Math.round((nobleIntel.avgAmt||0)/1000)}K, Walker avg $${Math.round((walkerIntel.avgAmt||0)/1000)}K, ${gaps.length} gaps, ${newPostings.length} new postings ===`);
+  const fA = v => v>=1e6?'$'+(v/1e6).toFixed(1)+'M':v>=1000?'$'+(v/1000).toFixed(0)+'K':'$'+Math.round(v||0);
+  log(`=== Intel Agent Complete: IT/EdTech avg ${fA(nobleIntel.avgAmt)}, Construction avg ${fA(walkerIntel.avgAmt)}, STEM avg ${fA(stemIntel.avgAmt)}, ${gaps.length} gaps, ${newPostings.length} new postings ===`);
 }
 
 main().catch(err => { log(`FATAL: ${err.message}`); process.exit(1); });

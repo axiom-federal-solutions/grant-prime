@@ -185,7 +185,7 @@ body{font-family:'Outfit',system-ui,sans-serif;background:var(--bg);color:var(--
   <button class="sb-btn" onclick="go('help',this)">❓ Help & FAQ</button>
   <button class="sb-btn" onclick="openSettings()" style="color:var(--amber)">🔧 API Server Setup</button>
   <div style="padding:10px 12px"><button onclick="exportCSV()" style="width:100%;padding:7px;border-radius:6px;border:1px solid var(--greenBd);background:var(--greenDim);color:var(--green);font-family:'Outfit',sans-serif;font-size:10px;font-weight:700;cursor:pointer;letter-spacing:.04em">⬇ Export CSV</button></div>
-  <div class="sb-foot">Noble Erne, LLC<br>treagent1@gmail.com<br>~$8–10/mo · 11 Agents · 5 Sources<br>Supabase: grant-prime-db<br><span id="last-load" style="color:var(--t3)">Loading…</span></div>
+  <div class="sb-foot">Grant Prime Partners (3)<br>treagent1@gmail.com<br>~$8–10/mo · 11 Agents · 5 Sources<br>Supabase: grant-prime-db<br><span id="last-load" style="color:var(--t3)">Loading…</span></div>
 </nav>
 
 <div class="main" id="mc">
@@ -262,7 +262,15 @@ function srcColor(s){return {federal:'var(--cyan)',edtech:'var(--green)',state:'
 function srcLabel(s){return {federal:'Federal',edtech:'EdTech/DOL',state:'State/Local',foundation:'Foundation'}[s]||s;}
 function statusPill(s){const m={new:'sp-new',scored:'sp-scored',applied:'sp-applied',won:'sp-won',rejected:'sp-rejected',closed:'sp-closed'};return `<span class="${m[s]||'sp-new'}">${s}</span>`;}
 function urgencyClass(dl){const d=daysLeft(dl);if(d===null)return '';return d<=7?'urgent':d<=14?'warning':'';}
-function entityColor(e){if(!e)return 'var(--cyan)';if(e.toLowerCase().includes('walker'))return 'var(--green)';if(e.toLowerCase().includes('both'))return 'var(--violet)';return 'var(--cyan)';}
+function entityColor(e){
+  if(!e)return 'var(--cyan)';
+  var el=e.toLowerCase();
+  if(el.includes('construction')||el.includes('walker')||el.includes('sdvosb'))return 'var(--green)';
+  if(el.includes('stem education')||el.includes('stem partner')||el.includes('stem edu'))return '#a259ff';
+  if(el.includes('all partners')||el.includes('both'))return 'var(--gold)';
+  if(el.includes('edtech + stem')||el.includes('it + stem'))return 'var(--violet)';
+  return 'var(--cyan)'; // IT/EdTech Partner default
+}
 function complexityBadge(g){
   // Parse [Easy], [Moderate], [Intensive] from notes field
   var notes=g.notes||'';
@@ -606,17 +614,17 @@ function renderHome(){
   GRANTS.forEach(g=>{if(srcCounts[g.source]!==undefined)srcCounts[g.source]++;});
 
   // Pre-compute complex HTML blocks to avoid nested template literal parser issues
-  const _neCount=GRANTS.filter(function(g){var ef=(g.entity_fit||g.notes||'').toLowerCase();return !ef.includes('walker')||ef.includes('both');}).length;
-  const _wkCount=GRANTS.filter(function(g){var ef=(g.entity_fit||g.notes||'').toLowerCase();return ef.includes('walker')||ef.includes('sdvosb')||ef.includes('veteran');}).length;
-  const _stCount=GRANTS.filter(grantMatchesSTEM).length;
-  const _entityHtml='<div style="margin-bottom:8px"><div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:4px"><span style="color:var(--cyan);font-weight:600">💼 Ed / Tech</span><span style="color:var(--t2)">'+_neCount+' grants</span></div><div class="bar"><div class="bar-fill" style="width:'+(total?Math.round(_neCount/total*100):0)+'%;background:var(--cyan)"></div></div></div>'
-    +'<div style="margin-bottom:8px"><div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:4px"><span style="color:var(--violet);font-weight:600">🔬 STEM</span><span style="color:var(--t2)">'+_stCount+' grants</span></div><div class="bar"><div class="bar-fill" style="width:'+(total?Math.round(_stCount/total*100):0)+'%;background:var(--violet)"></div></div></div>'
-    +'<div><div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:4px"><span style="color:var(--green);font-weight:600">🏗️ Construction/SDVOSB</span><span style="color:var(--t2)">'+_wkCount+' grants</span></div><div class="bar"><div class="bar-fill" style="width:'+(total?Math.round(_wkCount/total*100):0)+'%;background:var(--green)"></div></div></div>';
+  const _neCount=GRANTS.filter(function(g){var ef=(g.entity_fit||g.notes||'').toLowerCase();return ef.includes('edtech')||ef.includes('it &')||ef.includes('it+')|| (!ef.includes('construction')&&!ef.includes('walker')&&!ef.includes('stem education'));}).length;
+  const _wkCount=GRANTS.filter(function(g){var ef=(g.entity_fit||g.notes||'').toLowerCase();return ef.includes('construction')||ef.includes('walker')||ef.includes('sdvosb')||ef.includes('veteran');}).length;
+  const _stCount=GRANTS.filter(function(g){var ef=(g.entity_fit||g.notes||'').toLowerCase();return grantMatchesSTEM(g)||ef.includes('stem education')||ef.includes('stem partner');}).length;
+  const _entityHtml='<div style="margin-bottom:8px"><div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:4px"><span style="color:var(--cyan);font-weight:600">💼 IT & EdTech Partner</span><span style="color:var(--t2)">'+_neCount+' grants</span></div><div class="bar"><div class="bar-fill" style="width:'+(total?Math.round(_neCount/total*100):0)+'%;background:var(--cyan)"></div></div></div>'
+    +'<div style="margin-bottom:8px"><div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:4px"><span style="color:var(--violet);font-weight:600">🔬 STEM Education Partner</span><span style="color:var(--t2)">'+_stCount+' grants</span></div><div class="bar"><div class="bar-fill" style="width:'+(total?Math.round(_stCount/total*100):0)+'%;background:var(--violet)"></div></div></div>'
+    +'<div><div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:4px"><span style="color:var(--green);font-weight:600">🏗️ Construction Partner (SDVOSB)</span><span style="color:var(--t2)">'+_wkCount+' grants</span></div><div class="bar"><div class="bar-fill" style="width:'+(total?Math.round(_wkCount/total*100):0)+'%;background:var(--green)"></div></div></div>';
   const _urgentHtml=GRANTS.filter(function(g){var d=daysLeft(g.deadline);return d!==null&&d<=14&&g.status!=='closed'&&g.status!=='won';}).sort(function(a,b){return daysLeft(a.deadline)-daysLeft(b.deadline);}).slice(0,5).map(function(g){var d=daysLeft(g.deadline);return '<div class="alert" style="background:'+(d<=7?'var(--redDim)':'var(--amberDim)')+';cursor:pointer" onclick="openGrantDetail(\''+(g.grant_id||g.id)+'\')"><span style="font-size:16px">'+(d<=7?'🔴':'🟡')+'</span><div style="flex:1"><div style="font-size:11px;font-weight:600">'+(g.title||'Untitled').slice(0,44)+'…</div><div style="font-size:10px;color:var(--t2)">Score '+g.score+' · '+fmt(g.amount_max)+'</div></div><div style="font-size:11px;font-weight:800;color:'+(d<=7?'var(--red)':'var(--amber)')+';white-space:nowrap">'+d+'d</div></div>';}).join('')||'<div style="color:var(--t3);font-size:11px;padding:8px 0">No urgent deadlines ✅</div>';
 
   el.innerHTML=`
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
-      <div><div style="font-size:20px;font-weight:800">Command Center</div><div style="font-size:11px;color:var(--t3);margin-top:2px">GRANT PRIME · Noble Erne, LLC &amp; Walker Contractors LLC</div></div>
+      <div><div style="font-size:20px;font-weight:800">Command Center</div><div style="font-size:11px;color:var(--t3);margin-top:2px">GRANT PRIME · IT/EdTech · STEM Education · Construction (SDVOSB)</div></div>
       <button class="refresh-btn" onclick="loadData()">↻ Refresh</button>
     </div>
 
@@ -1115,6 +1123,7 @@ function renderAIInsights(){
     var gaps=intel?.fundingGaps||[];
     var nobleAwards=intel?.nobleErneSector?.awards||[];
     var walkerAwards=intel?.walkerSector?.awards||[];
+    var stemAwards=intel?.stemSector?.awards||[];
 
     var prioColor={high:'var(--red)',medium:'var(--amber)',low:'var(--green)'};
 
@@ -1151,7 +1160,7 @@ function renderAIInsights(){
         +'<div class="card-title">📊 Pipeline Intelligence</div>'
         +'<div class="kpi-row" style="margin-bottom:12px">'
         +'<div class="kpi"><div class="kpi-val" style="color:var(--cyan)">'+stats.total+'</div><div class="kpi-lbl">Active Grants</div></div>'
-        +'<div class="kpi"><div class="kpi-val" style="color:var(--green)">$'+Math.round(weighted/1000)+'K</div><div class="kpi-lbl">Probability-Weighted</div><div class="kpi-sub">Score × Amount</div></div>'
+        +'<div class="kpi"><div class="kpi-val" style="color:var(--green)">'+fmt(weighted)+'</div><div class="kpi-lbl">Probability-Weighted</div><div class="kpi-sub">Score × Amount</div></div>'
         +'<div class="kpi"><div class="kpi-val" style="color:var(--red)">'+(stats.closing7||0)+'</div><div class="kpi-lbl">Close in 7 Days</div></div>'
         +'<div class="kpi"><div class="kpi-val" style="color:var(--gold)">'+(stats.winRate||0)+'%</div><div class="kpi-lbl">Win Rate</div></div>'
         +'</div>';
@@ -1172,19 +1181,21 @@ function renderAIInsights(){
       intelHtml='<div class="card-section" style="margin-bottom:16px">'
         +'<div class="card-title" style="color:var(--cyan)">🕵️ Competitive Intelligence'+(intelRow?' <span style="font-size:9px;font-weight:400;color:var(--t3)">· '+new Date(intelRow.run_at).toLocaleDateString()+'</span>':'')+'</div>'
         +'<div class="kpi-row" style="margin-bottom:14px">'
-        +'<div class="kpi"><div class="kpi-val" style="color:var(--cyan)">$'+Math.round((summary.nobleAvgAward||0)/1000)+'K</div><div class="kpi-lbl">Noble Avg Award</div><div class="kpi-sub">USASpending data</div></div>'
-        +'<div class="kpi"><div class="kpi-val" style="color:var(--green)">$'+Math.round((summary.walkerAvgAward||0)/1000)+'K</div><div class="kpi-lbl">Walker Avg Award</div><div class="kpi-sub">USASpending data</div></div>'
+        +'<div class="kpi"><div class="kpi-val" style="color:var(--cyan)">'+fmt(summary.nobleAvgAward||0)+'</div><div class="kpi-lbl">IT/EdTech Avg Award</div><div class="kpi-sub">USASpending data</div></div>'
+        +'<div class="kpi"><div class="kpi-val" style="color:var(--green)">'+fmt(summary.walkerAvgAward||0)+'</div><div class="kpi-lbl">Construction Avg Award</div><div class="kpi-sub">USASpending data</div></div>'
+        +'<div class="kpi"><div class="kpi-val" style="color:#a259ff">'+fmt(summary.stemAvgAward||0)+'</div><div class="kpi-lbl">STEM Edu Avg Award</div><div class="kpi-sub">USASpending data</div></div>'
         +'<div class="kpi"><div class="kpi-val" style="color:var(--amber)">'+(summary.targetStateHits||0)+'</div><div class="kpi-lbl">TX/LA/VA/FL Hits</div></div>'
         +'<div class="kpi"><div class="kpi-val" style="color:var(--violet)">'+(summary.newGrantsGovToday||0)+'</div><div class="kpi-lbl">New Postings</div></div>'
         +'</div>';
-      if(nobleAwards.length){
-        intelHtml+='<div style="font-size:10px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">Recent Winners in Noble Erne NAICS Codes</div>';
-        intelHtml+=nobleAwards.slice(0,5).map(function(a){
+      var allAwards=nobleAwards.concat(stemAwards).concat(walkerAwards);
+      if(allAwards.length){
+        intelHtml+='<div style="font-size:10px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">Recent Winners in Partner NAICS Codes</div>';
+        intelHtml+=allAwards.slice(0,6).map(function(a){
           return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--bd)">'
             +'<div style="font-size:11px;color:var(--t1)">'+(a.recipient||'Unknown').slice(0,44)+'</div>'
             +'<div style="display:flex;gap:12px;align-items:center">'
             +'<span style="font-size:10px;color:var(--t3)">'+(a.agency||'—').slice(0,25)+'</span>'
-            +'<span style="font-size:12px;font-weight:700;color:var(--green)">$'+Math.round((a.amount||0)/1000)+'K</span>'
+            +'<span style="font-size:12px;font-weight:700;color:var(--green)">'+fmt(a.amount||0)+'</span>'
             +'</div></div>';
         }).join('');
       }

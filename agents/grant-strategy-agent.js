@@ -32,6 +32,7 @@ const ALERT_EMAIL = process.env.ALERT_EMAIL || 'treagent1@gmail.com';
 const FROM_EMAIL  = process.env.SENDGRID_FROM_EMAIL || 'treagent1@gmail.com';
 
 function log(msg) { console.log(`[${new Date().toISOString()}] STRATEGY: ${msg}`); }
+function fmtAmt(v) { if(!v&&v!==0)return '—'; return v>=1e9?'$'+(v/1e9).toFixed(2)+'B':v>=1e6?'$'+(v/1e6).toFixed(1)+'M':v>=1000?'$'+(v/1000).toFixed(0)+'K':'$'+Math.round(v); }
 
 // ── Build pipeline stats from Supabase ─────────────────────
 async function buildPipelineStats() {
@@ -144,8 +145,8 @@ Total active grants: ${stats.total}
 Applications submitted: ${stats.applied} | Won: ${stats.won} | Win rate: ${stats.winRate}%
 Score 80-100: ${stats.dist['80-100']} | Score 65-79: ${stats.dist['65-79']} | Score 50-64: ${stats.dist['50-64']} | Score 0-49: ${stats.dist['0-49']}
 Closing in 7 days: ${stats.closing7} | Closing in 30 days: ${stats.closing30} | Rolling/no deadline: ${stats.rolling}
-Noble Erne fit: ${stats.nobleErneFit} grants | Walker Contractors fit: ${stats.walkerFit} grants
-Total pipeline: $${Math.round(stats.totalPipeline/1000)}K | Probability-weighted: $${Math.round(stats.weightedPipeline/1000)}K
+IT/EdTech Partner fit: ${stats.nobleErneFit} grants | Construction Partner fit: ${stats.walkerFit} grants
+Total pipeline: ${fmtAmt(stats.totalPipeline)} | Probability-weighted: ${fmtAmt(stats.weightedPipeline)}
 High-value (≥$100K): ${stats.highValueCount} grants | Missing award amounts: ${stats.missingAmounts}
 
 GRANTS BY SOURCE:
@@ -238,7 +239,7 @@ async function sendStrategicBrief(recommendations, stats) {
   </div>
   <div style="display:flex;gap:10px;margin-bottom:18px;flex-wrap:wrap;">
     <div style="flex:1;min-width:100px;background:#0F1424;border:1px solid rgba(255,255,255,.06);border-radius:8px;padding:12px;text-align:center;"><div style="font-size:22px;font-weight:800;color:#8B95AB">${stats.total}</div><div style="font-size:9px;color:#4D5669;text-transform:uppercase;letter-spacing:.1em">Active Grants</div></div>
-    <div style="flex:1;min-width:100px;background:#0F1424;border:1px solid rgba(255,255,255,.06);border-radius:8px;padding:12px;text-align:center;"><div style="font-size:22px;font-weight:800;color:#34D399">$${Math.round(stats.weightedPipeline/1000)}K</div><div style="font-size:9px;color:#4D5669;text-transform:uppercase;letter-spacing:.1em">Weighted Pipeline</div></div>
+    <div style="flex:1;min-width:100px;background:#0F1424;border:1px solid rgba(255,255,255,.06);border-radius:8px;padding:12px;text-align:center;"><div style="font-size:22px;font-weight:800;color:#34D399">${fmtAmt(stats.weightedPipeline)}</div><div style="font-size:9px;color:#4D5669;text-transform:uppercase;letter-spacing:.1em">Weighted Pipeline</div></div>
     <div style="flex:1;min-width:100px;background:#0F1424;border:1px solid rgba(255,255,255,.06);border-radius:8px;padding:12px;text-align:center;"><div style="font-size:22px;font-weight:800;color:#F87171">${stats.closing7}</div><div style="font-size:9px;color:#4D5669;text-transform:uppercase;letter-spacing:.1em">Closing in 7d</div></div>
     <div style="flex:1;min-width:100px;background:#0F1424;border:1px solid rgba(255,255,255,.06);border-radius:8px;padding:12px;text-align:center;"><div style="font-size:22px;font-weight:800;color:#E9C46A">${stats.winRate}%</div><div style="font-size:9px;color:#4D5669;text-transform:uppercase;letter-spacing:.1em">Win Rate</div></div>
   </div>
