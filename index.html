@@ -648,28 +648,81 @@ function setAQBudget(v){
 }
 function renderAction(){
   const el=document.getElementById('t-action');
-  let urgent=GRANTS.filter(g=>{const d=daysLeft(g.deadline);return d!==null&&d<=14&&g.score>=65&&g.status!=='closed'&&g.status!=='won'&&g.status!=='applied';});
-  if (_aqBudget > 0) urgent = urgent.filter(g => (g.amount_max||0) >= _aqBudget || g.amount_max === null);
-  urgent = urgent.sort((a,b)=>daysLeft(a.deadline)-daysLeft(b.deadline));
 
-  // Pre-compute row HTML to avoid triple-nested template literal parser issue
-  const _urgentRowsHtml=urgent.map(function(g){var d=daysLeft(g.deadline);return '<div class="grant-row '+(urgencyClass(g.deadline))+'" onclick="openGrantDetail(\''+(g.grant_id||g.id)+'\')"><div><div style="font-size:12px;font-weight:600">'+(g.title||'Untitled').slice(0,56)+'…</div><div style="font-size:10px;color:var(--t3);margin-top:2px">'+(g.funder||'—')+' · <span style="color:'+srcColor(g.source)+'">'+srcLabel(g.source)+'</span></div></div><div style="font-size:16px;font-weight:800;color:'+sc(g.score)+'">'+g.score+'</div><div style="font-size:12px;font-weight:600">'+fmt(g.amount_max)+'</div><div style="font-size:11px">'+fmtDate(g.deadline)+'</div><div style="font-size:14px;font-weight:800;color:'+(d<=7?'var(--red)':'var(--amber)')+'">'+d+'d</div></div>';}).join('');
+  // Base pool: scored grants (≥65) closing within 14 days, not yet acted on
+  let urgent=GRANTS.filter(function(g){
+    var d=daysLeft(g.deadline);
+    return d!==null && d<=14 && (g.score||0)>=65
+      && g.status!=='closed' && g.status!=='won' && g.status!=='applied';
+  });
 
-  const budgetBtns = [
-    {label:'All Amounts', v:0},
-    {label:'$10K+', v:10000},
-    {label:'$50K+', v:50000},
-    {label:'$100K+', v:100000},
-    {label:'$250K+', v:250000},
-  ].map(b=>`<button onclick="setAQBudget(${b.v})" style="padding:4px 10px;border-radius:5px;border:1px solid ${_aqBudget===b.v?'var(--greenBd)':'var(--bd)'};background:${_aqBudget===b.v?'var(--greenDim)':'var(--bg3)'};color:${_aqBudget===b.v?'var(--green)':'var(--t2)'};font-family:'Outfit',sans-serif;font-size:10px;font-weight:600;cursor:pointer">${b.label}</button>`).join('');
+  // Award filter — only keep grants with a confirmed amount_max >= threshold
+  // NOTE: null/missing amounts are EXCLUDED when a budget filter is active
+  if (_aqBudget > 0) {
+    urgent = urgent.filter(function(g){
+      if (g.amount_max===null || g.amount_max===undefined) return false;
+      return Number(g.amount_max) >= _aqBudget;
+    });
+  }
 
-  el.innerHTML=`
-    <div style="margin-bottom:12px"><div style="font-size:20px;font-weight:800">🚨 Action Queue</div><div style="font-size:11px;color:var(--t3);margin-top:2px">High-match grants · deadline ≤14 days · score ≥65 · not yet applied</div></div>
-    <div style="display:flex;align-items:center;gap:6px;margin-bottom:14px;flex-wrap:wrap">
-      <span style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em;font-weight:700;margin-right:2px">Award:</span>
-      ${budgetBtns}
-    </div>
-    ${urgent.length?`<div style="display:grid;grid-template-columns:minmax(0,1fr) 70px 90px 80px 70px;gap:8px;padding:6px 14px;margin-bottom:4px"><span style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em">Grant</span><span style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em">Score</span><span style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em">Amount</span><span style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em">Deadline</span><span style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em">Days</span></div>${_urgentRowsHtml}`:`<div class="empty"><div class="empty-icon">✅</div><div class="empty-title">Action queue clear</div><div class="empty-body">No high-match grants closing in the next 14 days${_aqBudget>0?' at this award size':''}.${_aqBudget>0?'<button onclick="setAQBudget(0)" style="background:none;border:none;color:var(--green);cursor:pointer;font-family:inherit;font-size:11px;text-decoration:underline"> Clear budget filter</button>':''}</div></div>`}`;
+  urgent = urgent.sort(function(a,b){ return daysLeft(a.deadline)-daysLeft(b.deadline); });
+
+  // Pre-compute row HTML (avoids nested template literal parser bug)
+  var _urgentRowsHtml=urgent.map(function(g){
+    var d=daysLeft(g.deadline);
+    return '<div class="grant-row '+urgencyClass(g.deadline)+'" onclick="openGrantDetail(\''+(g.grant_id||g.id)+'\')">'
+      +'<div><div style="font-size:12px;font-weight:600">'+(g.title||'Untitled').slice(0,56)+'…</div>'
+      +'<div style="font-size:10px;color:var(--t3);margin-top:2px">'+(g.funder||'—')+' · <span style="color:'+srcColor(g.source)+'">'+srcLabel(g.source)+'</span></div></div>'
+      +'<div style="font-size:16px;font-weight:800;color:'+sc(g.score||0)+'">'+g.score+'</div>'
+      +'<div style="font-size:12px;font-weight:600">'+fmt(g.amount_max)+'</div>'
+      +'<div style="font-size:11px">'+fmtDate(g.deadline)+'</div>'
+      +'<div style="font-size:14px;font-weight:800;color:'+(d<=7?'var(--red)':'var(--amber)')+'">'+d+'d</div>'
+      +'</div>';
+  }).join('');
+
+  // Budget buttons — active state driven by _aqBudget value at render time
+  var _budgetDefs=[
+    {label:'All Amounts',v:0},
+    {label:'$10K+',v:10000},
+    {label:'$50K+',v:50000},
+    {label:'$100K+',v:100000},
+    {label:'$250K+',v:250000},
+  ];
+  var _budgetBtns=_budgetDefs.map(function(b){
+    var active=(_aqBudget===b.v);
+    return '<button onclick="setAQBudget('+b.v+')" style="padding:5px 11px;border-radius:5px;border:1px solid '+(active?'var(--greenBd)':'var(--bd)')+';background:'+(active?'var(--greenDim)':'var(--bg3)')+';color:'+(active?'var(--green)':'var(--t2)')+';font-family:\'Outfit\',sans-serif;font-size:10px;font-weight:600;cursor:pointer;transition:all .15s">'+b.label+'</button>';
+  }).join('');
+
+  // Count label
+  var _baseCount=GRANTS.filter(function(g){var d=daysLeft(g.deadline);return d!==null&&d<=14&&(g.score||0)>=65&&g.status!=='closed'&&g.status!=='won'&&g.status!=='applied';}).length;
+
+  el.innerHTML='<div style="margin-bottom:12px">'
+    +'<div style="font-size:20px;font-weight:800">🚨 Action Queue</div>'
+    +'<div style="font-size:11px;color:var(--t3);margin-top:2px">Score ≥65 · closing ≤14 days · not yet applied · '+_baseCount+' total</div>'
+    +'</div>'
+    +'<div style="display:flex;align-items:center;gap:6px;margin-bottom:14px;flex-wrap:wrap">'
+    +'<span style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em;font-weight:700;margin-right:2px">AWARD:</span>'
+    +_budgetBtns
+    +'</div>'
+    +(urgent.length
+      ? '<div style="display:grid;grid-template-columns:minmax(0,1fr) 70px 90px 80px 70px;gap:8px;padding:6px 14px;margin-bottom:4px">'
+        +'<span style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em">Grant</span>'
+        +'<span style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em">Score</span>'
+        +'<span style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em">Amount</span>'
+        +'<span style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em">Deadline</span>'
+        +'<span style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em">Days</span>'
+        +'</div>'+_urgentRowsHtml
+      : '<div class="empty"><div class="empty-icon">✅</div>'
+        +'<div class="empty-title">Action queue clear'+(urgent.length===0&&_aqBudget>0?' at this award size':'')+'</div>'
+        +'<div class="empty-body">'
+        +(_aqBudget>0
+          ? 'No scored grants with confirmed award ≥'+fmt(_aqBudget)+' closing in 14 days. <button onclick="setAQBudget(0)" style="background:none;border:none;color:var(--green);cursor:pointer;font-family:inherit;font-size:11px;text-decoration:underline;padding:0">Show all amounts</button>'
+          : (_baseCount===0 && GRANTS.filter(g=>g.score>=65).length===0
+            ? 'Grants haven\'t been scored yet. Run: <code style="color:var(--cyan)">npm run scoring</code>'
+            : 'No urgent deadlines right now. Check back tomorrow or view All Grants.')
+        )
+        +'</div></div>'
+    );
 }
 
 // ── GRANT LIST BY SOURCE ──────────────────────────────────────────────────
