@@ -185,7 +185,7 @@ ${grantList}`;
   try {
     const message = await anthropic.messages.create({
       model: 'claude-haiku-4-5-20251001',
-      max_tokens: 2048,
+      max_tokens: 1500,   // 10 grants × ~120 tokens/result = ~1200, 1500 gives headroom
       messages: [{ role: 'user', content: prompt }],
     });
 
@@ -218,7 +218,7 @@ async function updateScores(scores) {
     }
 
     // Encode entity + category + complexity into structured notes field
-    // Format: [Noble Erne][EdTech][Easy] reason text
+    // Format: [IT & EdTech Partner][EdTech][Easy] reason text
     const entityLabel     = item.entity     ? `[${item.entity}] `     : '';
     const catLabel        = item.category   ? `[${item.category}] `   : '';
     const complexityLabel = item.complexity ? `[${item.complexity}] ` : '';
@@ -283,10 +283,16 @@ async function main() {
 
   log(`Found ${grants.length} grants to score`);
 
-  // Process in batches of 20 (Haiku handles this well, stays cheap)
-  const batchSize = 20;
+  // Batch size 10: reduces per-request token load, avoids Haiku TPM rate limits.
+  // 8s inter-batch sleep: Haiku TPM limit resets per minute — spacing batches prevents
+  // alternating-batch failures seen when batching 20 at 2s intervals.
+  const batchSize = 10;
+  const INTER_BATCH_SLEEP = 8000;
+  const MAX_BATCH_RETRIES = 3;
+
   let totalUpdated = 0;
   let totalHighScore = 0;
+  let totalFailed = 0;
 
   for (let i = 0; i < grants.length; i += batchSize) {
     const batch = grants.slice(i, i + batchSize);
@@ -295,17 +301,36 @@ async function main() {
 
     log(`Scoring batch ${batchNum}/${totalBatches} (${batch.length} grants)...`);
 
-    const scores = await scoreBatch(batch);
+    // Retry loop with exponential backoff on Haiku errors
+    let scores = null;
+    for (let attempt = 1; attempt <= MAX_BATCH_RETRIES; attempt++) {
+      scores = await scoreBatch(batch);
+      const failCount = scores.filter(s => s.score === 0 && (s.reason || '').includes('Scoring failed')).length;
+      if (failCount === 0) break; // all scored successfully
+      if (attempt < MAX_BATCH_RETRIES) {
+        const backoff = attempt * 12000; // 12s, 24s
+        log(`  Batch ${batchNum} failed (${failCount} errors) — retry ${attempt}/${MAX_BATCH_RETRIES} in ${backoff/1000}s`);
+        await sleep(backoff);
+      } else {
+        log(`  Batch ${batchNum} exhausted retries — ${failCount} grants left unscored`);
+        totalFailed += failCount;
+      }
+    }
+
     totalHighScore += scores.filter(s => s.score >= 80).length;
     const updated = await updateScores(scores);
     totalUpdated += updated;
 
     log(`  Batch ${batchNum}: ${updated} grants scored`);
 
-    // Wait 2 seconds between batches to respect Anthropic rate limits
+    // Pace between batches — gives Haiku TPM limit time to recover
     if (i + batchSize < grants.length) {
-      await sleep(2000);
+      await sleep(INTER_BATCH_SLEEP);
     }
+  }
+
+  if (totalFailed > 0) {
+    log(`⚠ ${totalFailed} grants could not be scored after retries — AutoFix will retry tomorrow`);
   }
 
   log(`=== Scoring Complete: ${totalUpdated}/${grants.length} grants scored ===`);
