@@ -54,31 +54,46 @@ const STEM_NAICS = ['611110','611519','611710','611699','611430','541715','61131
 const TARGET_STATES = ['TX','LA','VA','FL','OK'];
 
 // ── Query USASpending.gov for recent awards ──────────────────
+// Note: USASpending v2 requires naics_codes as { require: [...] } object.
+// Contract types (A-D) and assistance types (02-05) must be in separate requests.
 async function fetchUSASpendingAwards(naicsCodes, entityLabel) {
   const url = 'https://api.usaspending.gov/api/v2/search/spending_by_award/';
   const thisYear = new Date().getFullYear();
-  const body = {
-    filters: {
-      time_period: [{ start_date: `${thisYear-1}-01-01`, end_date: `${thisYear}-12-31` }],
-      naics_codes: naicsCodes.slice(0, 5),
-      award_type_codes: ['02','03','04','05','A','B','C','D'],
-    },
-    fields: ['Award ID','Recipient Name','Award Amount','Awarding Agency Name','Place of Performance State Code','Award Type'],
-    sort: 'Award Amount',
-    order: 'desc',
-    limit: 20,
-    page: 1,
-  };
 
-  const data = await safeFetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
+  // Fetch contracts (A,B,C,D) and assistance (02,03,04,05) separately, merge results
+  async function fetchByType(awardTypes) {
+    const body = {
+      filters: {
+        time_period: [{ start_date: `${thisYear-1}-01-01`, end_date: `${thisYear}-12-31` }],
+        naics_codes: { require: naicsCodes.slice(0, 5) },
+        award_type_codes: awardTypes,
+      },
+      fields: ['Award ID','Recipient Name','Award Amount','Awarding Agency Name','Place of Performance State Code','Award Type'],
+      sort: 'Award Amount',
+      order: 'desc',
+      limit: 15,
+      page: 1,
+    };
+    return safeFetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  }
 
-  if (!data?.results?.length) return { entity: entityLabel, awards: [], totalAmt: 0, avgAmt: 0, topAgencies: [], targetStateAwards: 0 };
+  const [contractData, assistData] = await Promise.allSettled([
+    fetchByType(['A','B','C','D']),
+    fetchByType(['02','03','04','05','06']),
+  ]);
+  await sleep(500);
 
-  const awards = data.results.map(a => ({
+  const contractResults = contractData.status === 'fulfilled' ? (contractData.value?.results || []) : [];
+  const assistResults   = assistData.status === 'fulfilled'   ? (assistData.value?.results   || []) : [];
+  const allResults      = [...contractResults, ...assistResults];
+
+  if (!allResults.length) return { entity: entityLabel, awards: [], totalAmt: 0, avgAmt: 0, topAgencies: [], targetStateAwards: 0 };
+
+  const awards = allResults.map(a => ({
     recipient: a['Recipient Name'],
     amount: Number(a['Award Amount']) || 0,
     agency: a['Awarding Agency Name'],
@@ -103,31 +118,38 @@ async function fetchUSASpendingAwards(naicsCodes, entityLabel) {
 }
 
 // ── Check for new Grants.gov postings (last 48h) ─────────────
+// Uses the public Grants.gov v2 search API (no key required for GET searches).
+// Falls back gracefully if the API changes again.
 async function fetchRecentGrantsGov() {
-  const url = 'https://api.grants.gov/grantsws/rest/opportunities/search/';
-  const twoDaysAgo = new Date(Date.now() - 48*60*60*1000).toISOString().split('T')[0].replace(/-/g,'/');
-  const body = {
-    keyword: 'workforce technology training',
-    oppStatuses: 'posted',
-    postedDateRange: { startDate: twoDaysAgo },
-    rows: 10,
-    startRecordNum: 0,
-    sortBy: 'openDate|desc',
-  };
+  const twoDaysAgo = new Date(Date.now() - 48*60*60*1000).toISOString().split('T')[0];
 
-  const data = await safeFetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
+  // Try the v2 public search endpoint first
+  const params = new URLSearchParams({
+    keyword: 'workforce technology training STEM education',
+    oppStatuses: 'posted',
+    dateRange: 'custom',
+    startDateFrom: twoDaysAgo,
+    rows: '10',
+    sortBy: 'openDate',
+    sortOrder: 'desc',
   });
 
-  if (!data?.oppHits?.length) return [];
-  return data.oppHits.slice(0, 5).map(o => ({
-    title: o.title || 'Unknown',
-    agency: o.agencyName || 'Unknown',
-    closeDate: o.closeDate || null,
-    amount: o.awardFloor || null,
-    link: `https://www.grants.gov/search-results-detail/${o.id}`,
+  const url = `https://api.grants.gov/v2/opportunities/search?${params.toString()}`;
+  const data = await safeFetch(url);
+
+  // v2 response shape: { data: { hits: [...] } }
+  const hits = data?.data?.hits || data?.hits || data?.opportunities || [];
+  if (!hits.length) {
+    log('  Grants.gov returned 0 results (API may have changed — skipping)');
+    return [];
+  }
+
+  return hits.slice(0, 5).map(o => ({
+    title: o.opportunityTitle || o.title || 'Unknown',
+    agency: o.agencyName || o.agency || 'Unknown',
+    closeDate: o.closeDate || o.applicationDeadline || null,
+    amount: o.awardCeiling || o.awardFloor || null,
+    link: `https://www.grants.gov/search-results-detail/${o.opportunityId || o.id}`,
   }));
 }
 

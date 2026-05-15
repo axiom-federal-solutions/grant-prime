@@ -6,8 +6,8 @@
 //   Runs after discovery agent each morning.
 //   Pulls all grants with status = 'new' from Supabase.
 //   Sends them to Claude Haiku in batches of 20.
-//   Haiku scores each 0–100 for Noble Erne LLC AND Walker Contractors LLC (SDVOSB).
-//   Entity fit stored in notes: [Noble Erne], [Walker Contractors], or [Both].
+//   Haiku scores each 0–100 for all 3 partners (IT/EdTech, Construction, STEM Edu).
+//   Entity fit stored in notes: [IT & EdTech Partner], [Construction Partner], [STEM Education Partner], etc.
 //   Updates score and status = 'scored' in Supabase.
 //
 // Cost note:
@@ -251,11 +251,23 @@ async function main() {
     process.exit(1);
   }
 
-  // Pull all unscored grants — include naics and source for better scoring
-  const { data: grants, error } = await supabase
+  // FORCE_RESCORE=true re-scores all active grants (not just status='new')
+  // Use this after updating the scoring model to reclassify the full pipeline:
+  //   FORCE_RESCORE=true node agents/grant-scoring-agent.js
+  const forceRescore = process.env.FORCE_RESCORE === 'true' || process.argv.includes('--rescore');
+
+  let query = supabase
     .from('grants')
-    .select('id, title, funder, description, eligibility, source, naics')
-    .eq('status', 'new');
+    .select('id, title, funder, description, eligibility, source, naics');
+
+  if (forceRescore) {
+    log('FORCE_RESCORE mode — re-scoring all active grants with updated 3-partner model');
+    query = query.not('status', 'in', '("closed","rejected","won")');
+  } else {
+    query = query.eq('status', 'new');
+  }
+
+  const { data: grants, error } = await query;
 
   if (error) {
     log(`ERROR fetching grants: ${error.message}`);
@@ -263,7 +275,9 @@ async function main() {
   }
 
   if (!grants || grants.length === 0) {
-    log('No new grants to score. Exiting.');
+    log(forceRescore
+      ? 'No active grants found to re-score.'
+      : 'No new grants to score. Run with --rescore to reclassify all active grants.');
     return;
   }
 
@@ -369,7 +383,7 @@ async function main() {
     <a href="https://axiom-federal-solutions.github.io/grant-prime/" style="background:#34D399;color:#06080F;font-weight:700;font-size:12px;padding:12px 28px;border-radius:6px;text-decoration:none;display:inline-block">OPEN GRANT PRIME DASHBOARD</a>
   </div>
   <div style="margin-top:14px;padding:12px;background:#0B0F1A;border-radius:8px;font-size:10px;color:#4D5669;text-align:center">
-    GRANT PRIME · Noble Erne, LLC · Automated by Claude Haiku
+    GRANT PRIME · IT/EdTech · STEM Education · Construction (SDVOSB) · Automated by Claude Haiku
   </div>
 </div></body></html>`;
 

@@ -10,6 +10,7 @@
     "discovery": "node agents/grant-discovery-agent.js",
     "enrich":    "node agents/grant-amount-enricher.js",
     "scoring":   "node agents/grant-scoring-agent.js",
+    "rescore":   "node agents/grant-scoring-agent.js --rescore",
     "strategy":  "node agents/grant-strategy-agent.js",
     "intel":     "node agents/grant-intel-agent.js",
     "alert":     "node agents/grant-alert-agent.js",
