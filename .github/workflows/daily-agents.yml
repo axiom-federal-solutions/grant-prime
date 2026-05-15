@@ -220,3 +220,19 @@ jobs:
       - name: Run Treagent CEO briefing
         run: node agents/treagent.js
         timeout-minutes: 5
+
+  # ── 9. System Monitor (25 health checks — after treagent) ──
+  monitor:
+    name: "🔬 System Monitor"
+    runs-on: ubuntu-latest
+    needs: treagent
+    if: always()
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22', cache: 'npm' }
+      - run: npm ci
+      - name: Run system monitor (25 checks)
+        run: node agents/grant-system-monitor-agent.js
+        timeout-minutes: 10
+        continue-on-error: true

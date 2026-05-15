@@ -1,7 +1,7 @@
 {
   "name": "grant-prime",
   "version": "1.0.0",
-  "description": "Automated grant discovery, scoring, and tracking for Noble Erne, LLC",
+  "description": "Automated grant discovery, scoring, and tracking for GRANT PRIME",
   "type": "module",
   "main": "index.js",
   "scripts": {
@@ -18,8 +18,9 @@
     "autofix":   "node agents/grant-autofix-agent.js",
     "treagent":  "node agents/treagent.js",
     "test":      "node agents/grant-test-runner.js",
+    "monitor":   "node agents/grant-system-monitor-agent.js",
     "proposal":  "node agents/grant-proposal-agent.js",
-    "daily":     "node agents/grant-discovery-agent.js && node agents/grant-amount-enricher.js && node agents/grant-scoring-agent.js && node agents/grant-strategy-agent.js && node agents/grant-intel-agent.js && node agents/grant-test-runner.js && node agents/grant-alert-agent.js && node agents/grant-deadline-monitor.js && node agents/grant-health-monitor.js && node agents/grant-autofix-agent.js && node agents/treagent.js"
+    "daily":     "node agents/grant-discovery-agent.js && node agents/grant-amount-enricher.js && node agents/grant-scoring-agent.js && node agents/grant-strategy-agent.js && node agents/grant-intel-agent.js && node agents/grant-test-runner.js && node agents/grant-alert-agent.js && node agents/grant-deadline-monitor.js && node agents/grant-health-monitor.js && node agents/grant-autofix-agent.js && node agents/treagent.js && node agents/grant-system-monitor-agent.js"
   },
   "engines": {
     "node": ">=22"

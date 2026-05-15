@@ -138,7 +138,7 @@ async function generateRecommendations(stats) {
     .map(f => `  - ${f.name}: ${f.count} grants, avg score ${f.avgScore}`)
     .join('\n');
 
-  const prompt = `You are a strategic grant advisor for Noble Erne, LLC (IT consulting/EdTech/workforce development) and Walker Contractors LLC (SDVOSB construction/facilities). Analyze their grant pipeline and provide 6 specific, actionable strategic recommendations.
+  const prompt = `You are a strategic grant advisor for a 3-partner consortium: an IT & EdTech Partner (SAP/workforce development/instructional design), a Construction Partner (SDVOSB veteran-owned construction/facilities), and a STEM Education Partner (K-12 urban STEM for underrepresented youth, Houston TX). Analyze their grant pipeline and provide 6 specific, actionable strategic recommendations.
 
 PIPELINE DATA:
 Total active grants: ${stats.total}

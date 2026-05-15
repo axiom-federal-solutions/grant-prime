@@ -67,6 +67,7 @@ Register-GrantTask "8 Deadlines"      "agents/grant-deadline-monitor.js"   "8:45
 Register-GrantTask "9 Health"         "agents/grant-health-monitor.js"     "9:00AM"  "Health Monitor (system checks)"
 Register-GrantTask "10 AutoFix"       "agents/grant-autofix-agent.js"      "9:15AM"  "Auto-Fix Agent (retries failures)"
 Register-GrantTask "11 Treagent"      "agents/treagent.js"                 "9:30AM"  "Treagent CEO Briefing (daily digest email)"
+Register-GrantTask "12 SysMonitor"   "agents/grant-system-monitor-agent.js" "10:00AM" "System Monitor (25 health checks, silent fail detection)"
 
 # ── API server: starts automatically on Windows login ────────
 $serverAction  = New-ScheduledTaskAction -Execute $NodePath -Argument "server.js" -WorkingDirectory $ProjectDir
@@ -84,7 +85,7 @@ Write-Host "  Registered: On Login -> API Server (http://localhost:3001)" -Foreg
 # ── Summary ──────────────────────────────────────────────────
 Write-Host ""
 Write-Host "================================================" -ForegroundColor Cyan
-Write-Host "  GRANT PRIME Automation -- ACTIVE (11 tasks)" -ForegroundColor Cyan
+Write-Host "  GRANT PRIME Automation -- ACTIVE (12 tasks)" -ForegroundColor Cyan
 Write-Host "================================================" -ForegroundColor Cyan
 Write-Host "  7:00 AM  -> Discovery"
 Write-Host "  7:30 AM  -> Amount Enricher"
@@ -96,6 +97,7 @@ Write-Host "  8:45 AM  -> Alerts + Deadlines"
 Write-Host "  9:00 AM  -> Health Monitor"
 Write-Host "  9:15 AM  -> Auto-Fix"
 Write-Host "  9:30 AM  -> Treagent CEO Briefing -> treagent1@gmail.com"
+Write-Host "  10:00 AM -> System Monitor (25 health checks + silent fail detection)"
 Write-Host "  Login    -> API Server (localhost:3001)"
 Write-Host ""
 Write-Host "View tasks: Task Scheduler -> Task Scheduler Library -> Noble Erne" -ForegroundColor Yellow

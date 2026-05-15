@@ -1,23 +1,38 @@
-name: Grant Discovery
+# ============================================================
+# grant-discovery.yml — DISABLED
+#
+# This workflow has been SUPERSEDED by daily-agents.yml which
+# runs the full DAG (Discovery → Enrich → Scoring → Strategy
+# → Intel → Tests → Alerts → AutoFix → Treagent) on Node 22.
+#
+# This file is kept for manual fallback only.
+# DO NOT re-enable the schedule trigger — it will conflict.
+# ============================================================
+
+name: Grant Discovery (Manual Fallback Only)
 
 on:
-  schedule:
-    - cron: '0 11 * * *'   # 6:00 AM CT daily
   workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Reason for manual run (daily-agents.yml should handle this)'
+        required: false
+        default: 'Manual fallback'
 
 jobs:
   discover:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v3
+      - uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '22'
+          cache: 'npm'
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
       - name: Run discovery agent
         run: node agents/grant-discovery-agent.js
@@ -31,20 +46,3 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-
-      - name: Notify on failure
-        if: failure()
-        env:
-          SENDGRID_API_KEY: ${{ secrets.SENDGRID_API_KEY }}
-          SENDGRID_FROM_EMAIL: ${{ secrets.SENDGRID_FROM_EMAIL }}
-          ALERT_EMAIL: ${{ secrets.ALERT_EMAIL }}
-        run: |
-          curl -s --request POST --url 'https://api.sendgrid.com/v3/mail/send' \
-            --header "Authorization: Bearer $SENDGRID_API_KEY" \
-            --header 'Content-Type: application/json' \
-            --data "{
-              \"personalizations\":[{\"to\":[{\"email\":\"$ALERT_EMAIL\"}]}],
-              \"from\":{\"email\":\"$SENDGRID_FROM_EMAIL\"},
-              \"subject\":\"⚠️ GRANT PRIME: Discovery/Scoring agent FAILED\",
-              \"content\":[{\"type\":\"text/plain\",\"value\":\"Discovery or Scoring agent failed.\\nRun: ${{ github.run_id }}\\nLogs: https://github.com/axiom-federal-solutions/grant-prime/actions/runs/${{ github.run_id }}\"}]
-            }"
